@@ -1,4 +1,5 @@
-import { FiArrowDown, FiPlusCircle } from "react-icons/fi";
+import { FiArrowDown } from "react-icons/fi";
+import { AuthActionButton } from "@/components/auth/AuthActionButton";
 import { ButtonLink } from "@/components/ui/ButtonLink";
 import { LandingPreview } from "@/components/landing/LandingPreview";
 
@@ -22,9 +23,7 @@ export function LandingHero() {
           Add expenses together. Confirm them together. Settle the tab cleanly.
         </p>
         <div className="mt-8 flex flex-col gap-3 sm:flex-row">
-          <ButtonLink href="/dashboard" icon={<FiPlusCircle aria-hidden="true" />} size="lg">
-            Create a tab
-          </ButtonLink>
+          <AuthActionButton size="lg">Create a tab</AuthActionButton>
           <ButtonLink href="#how-it-works" icon={<FiArrowDown aria-hidden="true" />} size="lg" variant="secondary">
             See how it works
           </ButtonLink>
