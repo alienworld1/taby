@@ -29,7 +29,7 @@ export function AuthActionButton({
       loading={status === "onboarding"}
       onClick={() => {
         if (status === "signedIn") {
-          router.push("/dashboard");
+          router.push("/dashboard?create=1");
           return;
         }
 

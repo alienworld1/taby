@@ -14,6 +14,7 @@ type AuthContextValue = {
   magicReady: boolean;
   status: AuthStatus;
   closeSignIn: () => void;
+  getDidToken: () => Promise<string | null>;
   openSignIn: () => void;
   retryAccountSetup: () => Promise<void>;
   signIn: () => Promise<void>;
@@ -269,6 +270,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     router.replace("/");
   }, [magic, router]);
 
+  const getDidToken = useCallback(async () => {
+    if (!magic) {
+      return null;
+    }
+
+    try {
+      return await magic.user.generateIdToken({ lifespan: 900 });
+    } catch {
+      return null;
+    }
+  }, [magic]);
+
   const updateDisplayName = useCallback(
     async (displayName: string) => {
       if (!magic) {
@@ -310,6 +323,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       account,
       closeSignIn: () => setIsSignInOpen(false),
       errorCode,
+      getDidToken,
       isSignInOpen,
       magicReady,
       openSignIn: () => setIsSignInOpen(true),
@@ -322,6 +336,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     [
       account,
       errorCode,
+      getDidToken,
       isSignInOpen,
       magicReady,
       retryAccountSetup,
