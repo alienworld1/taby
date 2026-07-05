@@ -1,5 +1,6 @@
-import { and, desc, eq, inArray, ne, or, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, ne, sql } from "drizzle-orm";
 import { Magic } from "@magic-sdk/admin";
+import { normalizeEmail } from "@/lib/account/validation";
 import {
   TABY_CHAIN_ID,
   TABY_DEFAULT_CAP_BASE_UNITS,
@@ -295,27 +296,65 @@ export async function getCurrentUserTabs(input: {
 
   try {
     const db = getDb();
-    const rows = await db
-      .select({
-        memberCount: sql<number>`count(${tabMembers.id})::int`,
-        tab: tabs,
-      })
-      .from(tabs)
-      .leftJoin(tabMembers, eq(tabMembers.tabId, tabs.id))
+    const currentMemberRows = await db
+      .select()
+      .from(tabMembers)
       .where(
-        or(
-          eq(tabs.ownerUserId, currentUser.data.user.id),
+        and(
+          eq(tabMembers.userId, currentUser.data.user.id),
+          ne(tabMembers.joinStatus, "removed"),
+        ),
+      );
+    const ownedTabs = await db
+      .select()
+      .from(tabs)
+      .where(eq(tabs.ownerUserId, currentUser.data.user.id));
+    const tabIds = [
+      ...new Set([...currentMemberRows.map((member) => member.tabId), ...ownedTabs.map((tab) => tab.id)]),
+    ];
+
+    if (tabIds.length === 0) {
+      return { data: [], ok: true };
+    }
+
+    const [tabRows, memberCountRows, ownerRows] = await Promise.all([
+      db.select().from(tabs).where(inArray(tabs.id, tabIds)).orderBy(desc(tabs.updatedAt)),
+      db
+        .select({
+          memberCount: sql<number>`count(${tabMembers.id})::int`,
+          tabId: tabMembers.tabId,
+        })
+        .from(tabMembers)
+        .where(and(inArray(tabMembers.tabId, tabIds), ne(tabMembers.joinStatus, "removed")))
+        .groupBy(tabMembers.tabId),
+      db
+        .select()
+        .from(tabMembers)
+        .where(
           and(
-            eq(tabMembers.userId, currentUser.data.user.id),
+            inArray(tabMembers.tabId, tabIds),
+            eq(tabMembers.role, "owner"),
             ne(tabMembers.joinStatus, "removed"),
           ),
         ),
-      )
-      .groupBy(tabs.id)
-      .orderBy(desc(tabs.updatedAt));
+    ]);
+    const currentMemberByTabId = new Map(
+      currentMemberRows.map((member) => [member.tabId, member]),
+    );
+    const memberCountByTabId = new Map(
+      memberCountRows.map((row) => [row.tabId, row.memberCount]),
+    );
+    const ownerByTabId = new Map(ownerRows.map((member) => [member.tabId, member]));
 
     return {
-      data: rows.map((row) => ({ memberCount: row.memberCount, tab: tabDto(row.tab) })),
+      data: tabRows.map((tab) => ({
+        currentMember: currentMemberByTabId.get(tab.id)
+          ? memberDto(currentMemberByTabId.get(tab.id) as TabMember)
+          : null,
+        memberCount: memberCountByTabId.get(tab.id) ?? 0,
+        ownerDisplayName: ownerByTabId.get(tab.id)?.displayName ?? null,
+        tab: tabDto(tab),
+      })),
       ok: true,
     };
   } catch {
@@ -385,23 +424,41 @@ export async function getTabDetail(input: {
 
     return {
       data: {
-        activity: events.map(activityDto),
-        authorizations: authorizationRows.map((authorization) => ({
-          ...authorization,
-          capBaseUnits: authorization.capBaseUnits.toString(),
-          maxSingleSettlementBaseUnits:
-            authorization.maxSingleSettlementBaseUnits.toString(),
-        })),
-        confirmations: confirmationRows.map((row) => confirmationDto(row.expense_confirmations)),
-        expenses: expenseRows.map(expenseDto),
-        latestProposal: latestProposalRows[0]
-          ? {
-              ...latestProposalRows[0],
-              totalAmountBaseUnits: latestProposalRows[0].totalAmountBaseUnits.toString(),
-            }
-          : null,
+        activity:
+          access.data.currentMember?.joinStatus === "invited" && !access.data.isOwner
+            ? []
+            : events.map(activityDto),
+        authorizations:
+          access.data.currentMember?.joinStatus === "invited" && !access.data.isOwner
+            ? []
+            : authorizationRows.map((authorization) => ({
+                ...authorization,
+                capBaseUnits: authorization.capBaseUnits.toString(),
+                maxSingleSettlementBaseUnits:
+                  authorization.maxSingleSettlementBaseUnits.toString(),
+              })),
+        confirmations:
+          access.data.currentMember?.joinStatus === "invited" && !access.data.isOwner
+            ? []
+            : confirmationRows.map((row) => confirmationDto(row.expense_confirmations)),
+        expenses:
+          access.data.currentMember?.joinStatus === "invited" && !access.data.isOwner
+            ? []
+            : expenseRows.map(expenseDto),
+        latestProposal:
+          access.data.currentMember?.joinStatus === "invited" && !access.data.isOwner
+            ? null
+            : latestProposalRows[0]
+              ? {
+                  ...latestProposalRows[0],
+                  totalAmountBaseUnits: latestProposalRows[0].totalAmountBaseUnits.toString(),
+                }
+              : null,
         members: members.map(memberDto),
-        splits: splitRows.map((row) => splitDto(row.expense_splits)),
+        splits:
+          access.data.currentMember?.joinStatus === "invited" && !access.data.isOwner
+            ? []
+            : splitRows.map((row) => splitDto(row.expense_splits)),
         tab: tabDto(access.data.tab),
       },
       ok: true,
@@ -577,6 +634,187 @@ export async function addTabMember(input: {
   }
 }
 
+export async function inviteTabMember(input: {
+  didToken: unknown;
+  email: unknown;
+  tabId: unknown;
+}) {
+  const currentUser = await getCurrentUser(input.didToken);
+
+  if (!currentUser.ok) {
+    return currentUser;
+  }
+
+  if (!isUuid(input.tabId)) {
+    return fail("validation_failed", 422);
+  }
+
+  const email = normalizeEmail(input.email);
+
+  if (!email) {
+    return fail("validation_failed", 422);
+  }
+
+  const tabId = input.tabId;
+  const access = await getAccessContext(tabId, currentUser.data.user.id);
+
+  if (!access.ok) {
+    return access;
+  }
+
+  if (!access.data.isOwner) {
+    return fail("unauthorized", 403);
+  }
+
+  if (access.data.tab.status === "settled" || access.data.tab.status === "cancelled") {
+    return fail("invalid_transition", 409);
+  }
+
+  try {
+    const db = getDb();
+    const matchedUsers = await db
+      .select()
+      .from(users)
+      .where(sql`lower(${users.email}) = ${email}`)
+      .limit(2);
+
+    if (matchedUsers.length === 0) {
+      return fail("user_not_found", 404);
+    }
+
+    if (matchedUsers.length > 1) {
+      return fail("validation_failed", 409);
+    }
+
+    const invitedUser = matchedUsers[0];
+
+    if (invitedUser.id === currentUser.data.user.id || invitedUser.id === access.data.tab.ownerUserId) {
+      return fail("self_invite", 409);
+    }
+
+    const [existingMember] = await db
+      .select()
+      .from(tabMembers)
+      .where(
+        and(
+          eq(tabMembers.tabId, tabId),
+          eq(tabMembers.userId, invitedUser.id),
+          ne(tabMembers.joinStatus, "removed"),
+        ),
+      );
+
+    if (existingMember) {
+      return fail("member_already_exists", 409);
+    }
+
+    const result = await db.transaction(async (tx) => {
+      const [member] = await tx
+        .insert(tabMembers)
+        .values({
+          displayName: invitedUser.displayName,
+          joinStatus: "invited",
+          readinessStatus: "not_ready",
+          role: "member",
+          tabId,
+          userId: invitedUser.id,
+          walletAddress: null,
+        })
+        .returning();
+
+      const [activity] = await tx
+        .insert(activityEvents)
+        .values({
+          actorUserId: currentUser.data.user.id,
+          eventData: { displayName: member.displayName, memberId: member.id },
+          eventType: "member_invited",
+          tabId,
+        })
+        .returning();
+
+      await tx.update(tabs).set({ updatedAt: new Date() }).where(eq(tabs.id, tabId));
+
+      return { activity, member };
+    });
+
+    return {
+      data: { activity: activityDto(result.activity), member: memberDto(result.member) },
+      ok: true,
+    } satisfies TabResult<unknown>;
+  } catch {
+    return fail("database_unavailable", 503);
+  }
+}
+
+export async function acceptTabInvite(input: { didToken: unknown; tabId: unknown }) {
+  const currentUser = await getCurrentUser(input.didToken);
+
+  if (!currentUser.ok) {
+    return currentUser;
+  }
+
+  if (!isUuid(input.tabId)) {
+    return fail("validation_failed", 422);
+  }
+
+  const tabId = input.tabId;
+
+  try {
+    const db = getDb();
+    const [member] = await db
+      .select()
+      .from(tabMembers)
+      .where(and(eq(tabMembers.tabId, tabId), eq(tabMembers.userId, currentUser.data.user.id)));
+
+    if (!member || member.joinStatus !== "invited") {
+      return fail("invite_not_found", 404);
+    }
+
+    const [tab] = await db.select().from(tabs).where(eq(tabs.id, tabId));
+
+    if (!tab || tab.status === "settled" || tab.status === "cancelled") {
+      return fail("invite_not_found", 404);
+    }
+
+    const result = await db.transaction(async (tx) => {
+      const [joinedMember] = await tx
+        .update(tabMembers)
+        .set({
+          displayName: currentUser.data.user.displayName,
+          joinStatus: "joined",
+          updatedAt: new Date(),
+          walletAddress: currentUser.data.user.walletAddress.toLowerCase(),
+        })
+        .where(and(eq(tabMembers.id, member.id), eq(tabMembers.joinStatus, "invited")))
+        .returning();
+
+      if (!joinedMember) {
+        tx.rollback();
+      }
+
+      const [activity] = await tx
+        .insert(activityEvents)
+        .values({
+          actorUserId: currentUser.data.user.id,
+          eventData: { displayName: joinedMember.displayName, memberId: joinedMember.id },
+          eventType: "member_joined",
+          tabId,
+        })
+        .returning();
+
+      await tx.update(tabs).set({ updatedAt: new Date() }).where(eq(tabs.id, tabId));
+
+      return { activity, member: joinedMember };
+    });
+
+    return {
+      data: { activity: activityDto(result.activity), member: memberDto(result.member) },
+      ok: true,
+    } satisfies TabResult<unknown>;
+  } catch {
+    return fail("database_unavailable", 503);
+  }
+}
+
 export async function addExpense(input: {
   amountBaseUnits: unknown;
   didToken: unknown;
@@ -632,7 +870,7 @@ export async function addExpense(input: {
     return access;
   }
 
-  if (!access.data.currentMember || access.data.currentMember.joinStatus === "removed") {
+  if (!access.data.currentMember || access.data.currentMember.joinStatus !== "joined") {
     return fail("unauthorized", 403);
   }
 
@@ -650,14 +888,14 @@ export async function addExpense(input: {
     const memberMap = new Map(members.map((member) => [member.id, member]));
     const payer = memberMap.get(payerMemberId);
 
-    if (!payer || payer.joinStatus === "removed") {
+    if (!payer || payer.joinStatus !== "joined") {
       return fail("invalid_member", 422);
     }
 
     if (
       normalizedSplits.some((split) => {
         const member = memberMap.get(split.memberId);
-        return !member || member.joinStatus === "removed";
+        return !member || member.joinStatus !== "joined";
       })
     ) {
       return fail("invalid_member", 422);
@@ -780,7 +1018,7 @@ async function updateExpenseConfirmation(input: {
       return access;
     }
 
-    if (!access.data.currentMember || access.data.currentMember.joinStatus === "removed") {
+    if (!access.data.currentMember || access.data.currentMember.joinStatus !== "joined") {
       return fail("expense_not_involved", 403);
     }
 
@@ -982,6 +1220,10 @@ export async function recordTabAuthorization(input: {
     return fail("unauthorized", 403);
   }
 
+  if (access.data.currentMember.joinStatus !== "joined") {
+    return fail("unauthorized", 403);
+  }
+
   if (walletAddress !== currentUser.data.user.walletAddress.toLowerCase()) {
     return fail("unauthorized", 403);
   }
@@ -1067,7 +1309,7 @@ export async function createSettlementProposal(input: {
     return access;
   }
 
-  if (!access.data.currentMember || access.data.currentMember.joinStatus === "removed") {
+  if (!access.data.currentMember || access.data.currentMember.joinStatus !== "joined") {
     return fail("unauthorized", 403);
   }
 
