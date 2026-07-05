@@ -1,5 +1,5 @@
 import * as assert from "node:assert/strict";
-import test = require("node:test");
+import { test } from "node:test";
 import {
   calculateSettlement,
   type SettlementEngineInput,
