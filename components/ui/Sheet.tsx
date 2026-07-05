@@ -2,7 +2,6 @@
 
 import type { ReactNode } from "react";
 import { FiX } from "react-icons/fi";
-import { Button } from "@/components/ui/Button";
 
 type SheetProps = {
   children: ReactNode;
@@ -30,22 +29,22 @@ export function Sheet({
       role="dialog"
     >
       <div className="mx-auto w-full max-w-lg rounded-2xl border border-outline-variant bg-surface-container-lowest p-5 shadow-soft">
-        <div className="flex items-start justify-between gap-4">
-          <div>
-            <h2 className="text-xl font-semibold">{title}</h2>
+        <div className="relative min-h-10 pr-12">
+          <div className="min-w-0">
+            <h2 className="break-words text-xl font-semibold leading-7">{title}</h2>
             {description ? (
               <p className="mt-1 text-sm leading-6 text-muted">{description}</p>
             ) : null}
           </div>
-          <Button
+          <button
             aria-label="Close"
-            className="size-10 rounded-full px-0"
-            icon={<FiX aria-hidden="true" />}
+            className="absolute right-0 top-0 z-10 grid size-11 place-items-center rounded-full border border-outline-variant bg-surface-container-lowest text-foreground shadow-soft transition hover:border-outline hover:bg-surface-container-low"
             onClick={() => onOpenChange(false)}
-            variant="ghost"
+            type="button"
           >
+            <FiX aria-hidden="true" className="size-5" />
             <span className="sr-only">Close</span>
-          </Button>
+          </button>
         </div>
         <div className="mt-5">{children}</div>
       </div>
