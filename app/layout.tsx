@@ -1,5 +1,7 @@
 import type { Metadata } from "next";
 import { Hanken_Grotesk, JetBrains_Mono } from "next/font/google";
+import { AuthProvider } from "@/components/auth/AuthProvider";
+import { SignInSheet } from "@/components/auth/SignInSheet";
 import "./globals.css";
 
 const hanken = Hanken_Grotesk({
@@ -48,7 +50,10 @@ export default function RootLayout({
         >
           Skip to content
         </a>
-        {children}
+        <AuthProvider>
+          {children}
+          <SignInSheet />
+        </AuthProvider>
       </body>
     </html>
   );
