@@ -1,5 +1,5 @@
 import type { IconType } from "react-icons";
-import { FiHome, FiPlusCircle, FiSettings } from "react-icons/fi";
+import { FiHome, FiSettings } from "react-icons/fi";
 
 export type NavigationItem = {
   disabled?: boolean;
@@ -13,12 +13,6 @@ export const appNavigation: NavigationItem[] = [
     href: "/dashboard",
     icon: FiHome,
     label: "Dashboard",
-  },
-  {
-    disabled: true,
-    href: "/dashboard",
-    icon: FiPlusCircle,
-    label: "Create",
   },
   {
     href: "/settings",
