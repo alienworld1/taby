@@ -36,6 +36,7 @@ import {
   normalizeText,
   parseBaseUnits,
   parseFutureDate,
+  parseNonNegativeBaseUnits,
   parseOptionalPositiveInteger,
 } from "@/lib/tabs/validation";
 import type {
@@ -269,9 +270,9 @@ function normalizeSplits(input: unknown, amount: bigint, method: unknown) {
       return null;
     }
 
-    const share = parseBaseUnits(split.shareBaseUnits);
+    const share = parseNonNegativeBaseUnits(split.shareBaseUnits);
 
-    if (!share) {
+    if (share === null) {
       return null;
     }
 
@@ -950,6 +951,15 @@ export async function addExpense(input: {
             .returning()
         : [expense];
 
+      if (allConfirmed) {
+        await tx.insert(activityEvents).values({
+          actorUserId: currentUser.data.user.id,
+          eventData: { expenseId: finalExpense.id, title: finalExpense.title },
+          eventType: "expense_confirmed_all",
+          tabId,
+        });
+      }
+
       const [activity] = await tx
         .insert(activityEvents)
         .values({
@@ -1022,6 +1032,10 @@ async function updateExpenseConfirmation(input: {
       return fail("expense_not_involved", 403);
     }
 
+    if (!MUTABLE_TAB_STATUSES.has(access.data.tab.status)) {
+      return fail("invalid_transition", 409);
+    }
+
     const [split] = await db
       .select()
       .from(expenseSplits)
@@ -1036,7 +1050,12 @@ async function updateExpenseConfirmation(input: {
       return fail("expense_not_involved", 403);
     }
 
-    if (expense.status !== "pending") {
+    const canReviewExpense =
+      input.status === "confirmed"
+        ? expense.status === "pending" || expense.status === "disputed"
+        : expense.status === "pending";
+
+    if (!canReviewExpense) {
       return fail("invalid_transition", 409);
     }
 
@@ -1050,7 +1069,17 @@ async function updateExpenseConfirmation(input: {
         ),
       );
 
-    if (!existingConfirmation || existingConfirmation.status !== "pending") {
+    if (!existingConfirmation) {
+      return fail("invalid_transition", 409);
+    }
+
+    const canUpdateConfirmation =
+      input.status === "confirmed"
+        ? existingConfirmation.status === "pending" ||
+          existingConfirmation.status === "disputed"
+        : existingConfirmation.status === "pending";
+
+    if (!canUpdateConfirmation) {
       return fail("invalid_transition", 409);
     }
 
@@ -1058,12 +1087,7 @@ async function updateExpenseConfirmation(input: {
       const [confirmation] = await tx
         .update(expenseConfirmations)
         .set({ reason, status: input.status, updatedAt: new Date() })
-        .where(
-          and(
-            eq(expenseConfirmations.id, existingConfirmation.id),
-            eq(expenseConfirmations.status, "pending"),
-          ),
-        )
+        .where(eq(expenseConfirmations.id, existingConfirmation.id))
         .returning();
 
       if (!confirmation) {
@@ -1084,14 +1108,19 @@ async function updateExpenseConfirmation(input: {
           .select()
           .from(expenseConfirmations)
           .where(eq(expenseConfirmations.expenseId, expense.id));
+        const nextStatus = confirmations.every((row) => row.status === "confirmed")
+          ? "confirmed"
+          : confirmations.some((row) => row.status === "disputed")
+            ? "disputed"
+            : "pending";
 
-        if (confirmations.every((row) => row.status === "confirmed")) {
-          [updatedExpense] = await tx
-            .update(expenses)
-            .set({ status: "confirmed", updatedAt: new Date() })
-            .where(eq(expenses.id, expense.id))
-            .returning();
+        [updatedExpense] = await tx
+          .update(expenses)
+          .set({ status: nextStatus, updatedAt: new Date() })
+          .where(eq(expenses.id, expense.id))
+          .returning();
 
+        if (nextStatus === "confirmed") {
           [allConfirmedActivity] = await tx
             .insert(activityEvents)
             .values({
@@ -1148,6 +1177,84 @@ export function disputeExpense(input: {
   reason?: unknown;
 }) {
   return updateExpenseConfirmation({ ...input, status: "disputed" });
+}
+
+export async function removeExpense(input: { didToken: unknown; expenseId: unknown }) {
+  const currentUser = await getCurrentUser(input.didToken);
+
+  if (!currentUser.ok) {
+    return currentUser;
+  }
+
+  if (!isUuid(input.expenseId)) {
+    return fail("validation_failed", 422);
+  }
+
+  try {
+    const db = getDb();
+    const [expense] = await db.select().from(expenses).where(eq(expenses.id, input.expenseId));
+
+    if (!expense) {
+      return fail("not_found", 404);
+    }
+
+    const access = await getAccessContext(expense.tabId, currentUser.data.user.id);
+
+    if (!access.ok) {
+      return access;
+    }
+
+    if (!access.data.currentMember || access.data.currentMember.joinStatus !== "joined") {
+      return fail("unauthorized", 403);
+    }
+
+    if (!access.data.isOwner) {
+      return fail("unauthorized", 403);
+    }
+
+    if (!MUTABLE_TAB_STATUSES.has(access.data.tab.status)) {
+      return fail("invalid_transition", 409);
+    }
+
+    if (expense.status === "locked" || expense.status === "settled") {
+      return fail("invalid_transition", 409);
+    }
+
+    const result = await db.transaction(async (tx) => {
+      const [activity] = await tx
+        .insert(activityEvents)
+        .values({
+          actorUserId: currentUser.data.user.id,
+          eventData: {
+            amountBaseUnits: expense.amountBaseUnits.toString(),
+            expenseId: expense.id,
+            title: expense.title,
+          },
+          eventType: "expense_removed",
+          tabId: expense.tabId,
+        })
+        .returning();
+
+      await tx
+        .delete(expenseConfirmations)
+        .where(eq(expenseConfirmations.expenseId, expense.id));
+      await tx.delete(expenseSplits).where(eq(expenseSplits.expenseId, expense.id));
+      await tx.delete(expenses).where(eq(expenses.id, expense.id));
+      await tx.update(tabs).set({ updatedAt: new Date() }).where(eq(tabs.id, expense.tabId));
+
+      return { activity, expenseId: expense.id };
+    });
+
+    return {
+      data: {
+        activity: activityDto(result.activity),
+        expenseId: result.expenseId,
+      },
+      ok: true,
+    } satisfies TabResult<unknown>;
+  } catch {
+    return fail("database_unavailable", 503);
+  }
 }
 
 export async function recordTabAuthorization(input: {

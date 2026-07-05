@@ -65,6 +65,28 @@ export function parseBaseUnits(value: unknown) {
   return amount;
 }
 
+export function parseNonNegativeBaseUnits(value: unknown) {
+  if (typeof value === "number") {
+    if (!Number.isSafeInteger(value) || value < 0) {
+      return null;
+    }
+
+    return BigInt(value);
+  }
+
+  if (typeof value !== "string" || !INTEGER_PATTERN.test(value)) {
+    return null;
+  }
+
+  const amount = BigInt(value);
+
+  if (amount < BigInt(0) || amount > TABY_MAX_AMOUNT_BASE_UNITS) {
+    return null;
+  }
+
+  return amount;
+}
+
 export function parseOptionalPositiveInteger(value: unknown) {
   if (value === undefined || value === null) {
     return null;
