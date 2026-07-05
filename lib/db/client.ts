@@ -1,8 +1,6 @@
 import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
-import { users } from "@/lib/db/schema";
-
-const schema = { users };
+import * as schema from "@/lib/db/schema";
 
 declare global {
   var tabyPostgresClient: ReturnType<typeof postgres> | undefined;
