@@ -1,6 +1,9 @@
 import { tabErrorMessage } from "@/lib/tabs/messages";
 import type {
   ActivityEventResponse,
+  ExpenseConfirmationResponse,
+  ExpenseResponse,
+  ExpenseSplitResponse,
   TabDetailResponse,
   TabErrorCode,
   TabMemberResponse,
@@ -27,6 +30,25 @@ export type AddMemberResponse = {
 
 export type InviteMemberResponse = AddMemberResponse;
 export type AcceptInviteResponse = AddMemberResponse;
+
+export type AddExpenseResponse = {
+  activity: ActivityEventResponse;
+  confirmations: ExpenseConfirmationResponse[];
+  expense: ExpenseResponse;
+  splits: ExpenseSplitResponse[];
+};
+
+export type ReviewExpenseResponse = {
+  activity: ActivityEventResponse;
+  allConfirmedActivity: ActivityEventResponse | null;
+  confirmation: ExpenseConfirmationResponse;
+  expense: ExpenseResponse;
+};
+
+export type RemoveExpenseResponse = {
+  activity: ActivityEventResponse;
+  expenseId: string;
+};
 
 function isTabErrorCode(value: unknown): value is TabErrorCode {
   return (
@@ -167,5 +189,43 @@ export function acceptInviteRequest(didToken: string, tabId: string) {
   return requestTaby<AcceptInviteResponse>(`/api/tabs/${tabId}/invites/accept`, didToken, {
     body: JSON.stringify({}),
     method: "POST",
+  });
+}
+
+export function addExpenseRequest(
+  didToken: string,
+  tabId: string,
+  input: {
+    amountBaseUnits: string;
+    note?: string;
+    payerMemberId: string;
+    splitMethod: "equal" | "custom";
+    splits: Array<{ memberId: string; shareBaseUnits?: string }>;
+    title: string;
+  },
+) {
+  return requestTaby<AddExpenseResponse>(`/api/tabs/${tabId}/expenses`, didToken, {
+    body: JSON.stringify(input),
+    method: "POST",
+  });
+}
+
+export function confirmExpenseRequest(didToken: string, expenseId: string) {
+  return requestTaby<ReviewExpenseResponse>(`/api/expenses/${expenseId}/confirm`, didToken, {
+    body: JSON.stringify({}),
+    method: "POST",
+  });
+}
+
+export function disputeExpenseRequest(didToken: string, expenseId: string, reason: string) {
+  return requestTaby<ReviewExpenseResponse>(`/api/expenses/${expenseId}/dispute`, didToken, {
+    body: JSON.stringify({ reason }),
+    method: "POST",
+  });
+}
+
+export function removeExpenseRequest(didToken: string, expenseId: string) {
+  return requestTaby<RemoveExpenseResponse>(`/api/expenses/${expenseId}`, didToken, {
+    method: "DELETE",
   });
 }
