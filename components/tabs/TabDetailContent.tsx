@@ -9,6 +9,7 @@ import { ExpenseWorkspace } from "@/components/tabs/ExpenseWorkspace";
 import { InviteAcceptancePanel } from "@/components/tabs/InviteAcceptancePanel";
 import { InviteMemberSheet } from "@/components/tabs/InviteMemberSheet";
 import { MemberPanel } from "@/components/tabs/MemberPanel";
+import { SettlementSummary } from "@/components/tabs/SettlementSummary";
 import { SetupProgressStrip } from "@/components/tabs/SetupProgressStrip";
 import { TabHeader } from "@/components/tabs/TabHeader";
 import { Button } from "@/components/ui/Button";
@@ -283,6 +284,7 @@ export function TabDetailContent({ tabId }: TabDetailContentProps) {
           onDetailChange={setDetail}
           onRefetch={loadDetail}
         />
+        <SettlementSummary detail={detail} onRefresh={loadDetail} />
       </motion.div>
 
       <InviteMemberSheet
