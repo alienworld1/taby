@@ -1,17 +1,124 @@
 "use client";
 
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { FiPlusCircle } from "react-icons/fi";
 import { motion } from "motion/react";
-import { useAuth } from "@/components/auth/useAuth";
 import { SignInPrompt } from "@/components/auth/SignInPrompt";
+import { useAuth } from "@/components/auth/useAuth";
+import { CreateTabSheet } from "@/components/tabs/CreateTabSheet";
+import { TabGroup } from "@/components/tabs/TabGroup";
 import { Button } from "@/components/ui/Button";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { ErrorCallout } from "@/components/ui/ErrorCallout";
 import { LoadingState } from "@/components/ui/LoadingState";
 import { accountErrorMessage } from "@/lib/account/messages";
+import {
+  createTabRequest,
+  fetchTabs,
+  toTabClientError,
+  type TabClientError,
+} from "@/lib/tabs/client";
+import type { TabSummaryResponse } from "@/lib/tabs/types";
+
+const ACTIVE_STATUSES = new Set(["active", "review", "locked", "settling"]);
 
 export function DashboardContent() {
-  const { errorCode, retryAccountSetup, status } = useAuth();
+  const { errorCode, getDidToken, retryAccountSetup, status } = useAuth();
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const [createError, setCreateError] = useState<TabClientError | null>(null);
+  const [createOpen, setCreateOpen] = useState(() => searchParams.get("create") === "1");
+  const [createSubmitting, setCreateSubmitting] = useState(false);
+  const [fetchError, setFetchError] = useState<TabClientError | null>(null);
+  const [isLoading, setIsLoading] = useState(false);
+  const [tabs, setTabs] = useState<TabSummaryResponse[]>([]);
+
+  useEffect(() => {
+    if (searchParams.get("create") === "1") {
+      router.replace("/dashboard", { scroll: false });
+    }
+  }, [router, searchParams]);
+
+  const loadTabs = useCallback(async () => {
+    if (status !== "signedIn") {
+      return;
+    }
+
+    setIsLoading(true);
+    setFetchError(null);
+
+    const didToken = await getDidToken();
+
+    if (!didToken) {
+      setFetchError({
+        code: "unauthenticated",
+        message: "Sign in to continue.",
+      });
+      setIsLoading(false);
+      return;
+    }
+
+    try {
+      setTabs(await fetchTabs(didToken));
+    } catch (error) {
+      setFetchError(toTabClientError(error));
+    } finally {
+      setIsLoading(false);
+    }
+  }, [getDidToken, status]);
+
+  useEffect(() => {
+    const timeout = window.setTimeout(() => {
+      void loadTabs();
+    }, 0);
+
+    return () => window.clearTimeout(timeout);
+  }, [loadTabs]);
+
+  const groupedTabs = useMemo(() => {
+    const actionNeeded = tabs.filter(
+      (summary) => ACTIVE_STATUSES.has(summary.tab.status) && summary.memberCount < 2,
+    );
+    const active = tabs.filter(
+      (summary) => ACTIVE_STATUSES.has(summary.tab.status) && summary.memberCount >= 2,
+    );
+    const settled = tabs.filter((summary) => summary.tab.status === "settled");
+
+    return { actionNeeded, active, settled };
+  }, [tabs]);
+
+  async function handleCreate(input: { description?: string; title: string }) {
+    setCreateSubmitting(true);
+    setCreateError(null);
+
+    const didToken = await getDidToken();
+
+    if (!didToken) {
+      setCreateError({
+        code: "unauthenticated",
+        message: "Sign in to continue.",
+      });
+      setCreateSubmitting(false);
+      return false;
+    }
+
+    try {
+      const created = await createTabRequest(didToken, input);
+      setTabs((currentTabs) => [
+        { memberCount: 1, tab: created.tab },
+        ...currentTabs.filter((summary) => summary.tab.id !== created.tab.id),
+      ]);
+      setCreateOpen(false);
+      router.push(`/tabs/${created.tab.id}`);
+      return true;
+    } catch (error) {
+      setCreateError(toTabClientError(error));
+      return false;
+    } finally {
+      setCreateSubmitting(false);
+    }
+  }
 
   if (status === "initializing" || status === "onboarding") {
     return <LoadingState label="Getting your Taby account ready" rows={3} />;
@@ -35,21 +142,72 @@ export function DashboardContent() {
     );
   }
 
+  if (isLoading && tabs.length === 0) {
+    return <LoadingState label="Loading your tabs" rows={3} />;
+  }
+
   return (
-    <motion.div animate={{ opacity: 1, y: 0 }} initial={{ opacity: 0, y: 8 }}>
-      <EmptyState
-        action={
-          <div className="grid gap-2">
-            <Button disabled icon={<FiPlusCircle aria-hidden="true" />}>
-              Create your first tab
-            </Button>
-            <p className="max-w-xs text-sm text-muted">Tab creation comes next.</p>
+    <>
+      <div className="grid gap-5">
+        {fetchError ? (
+          <ErrorCallout
+            action={<Button onClick={loadTabs}>Try again</Button>}
+            message={fetchError.message}
+            title="We could not load your tabs"
+          />
+        ) : null}
+
+        {tabs.length === 0 && !fetchError ? (
+          <motion.div animate={{ opacity: 1, y: 0 }} initial={{ opacity: 0, y: 8 }}>
+            <EmptyState
+              action={
+                <Button
+                  icon={<FiPlusCircle aria-hidden="true" />}
+                  onClick={() => setCreateOpen(true)}
+                >
+                  Create your first tab
+                </Button>
+              }
+              description="Create a shared tab for one trip, dinner, or bill."
+              icon={<FiPlusCircle aria-hidden="true" />}
+              title="No tabs yet."
+            />
+          </motion.div>
+        ) : (
+          <div className="grid gap-6">
+            <div className="flex flex-col gap-3 rounded-md border border-outline-variant bg-surface-container-lowest p-4 shadow-soft sm:flex-row sm:items-center sm:justify-between">
+              <p className="text-sm leading-6 text-muted">
+                Open a tab to add people, then keep the group moving toward expenses and settlement.
+              </p>
+              <Button
+                className="shrink-0"
+                icon={<FiPlusCircle aria-hidden="true" />}
+                onClick={() => setCreateOpen(true)}
+              >
+                Create tab
+              </Button>
+            </div>
+            <TabGroup
+              emptyCopy="Tabs that need one more person will appear here."
+              tabs={groupedTabs.actionNeeded}
+              title="Needs setup"
+            />
+            <TabGroup tabs={groupedTabs.active} title="Active tabs" />
+            <TabGroup tabs={groupedTabs.settled} title="Settled tabs" />
           </div>
-        }
-        description="Create a shared tab for one trip, dinner, or bill. Tab creation comes next."
-        icon={<FiPlusCircle aria-hidden="true" />}
-        title="No tabs yet."
+        )}
+      </div>
+
+      <CreateTabSheet
+        error={createError}
+        loading={createSubmitting}
+        open={createOpen}
+        onOpenChange={(open) => {
+          setCreateOpen(open);
+          setCreateError(null);
+        }}
+        onSubmit={handleCreate}
       />
-    </motion.div>
+    </>
   );
 }
