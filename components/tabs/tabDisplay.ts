@@ -46,7 +46,7 @@ export function memberStatusLabels(member: TabMemberResponse) {
     labels.push("Invited");
   }
 
-  if (!member.walletAddress) {
+  if (member.joinStatus === "joined" && !member.walletAddress) {
     labels.push("Needs wallet");
   }
 
@@ -71,9 +71,7 @@ export function memberReadinessCopy(member: TabMemberResponse) {
   }
 
   if (member.joinStatus === "invited") {
-    return member.walletAddress
-      ? "Can review expenses after joining."
-      : "Can review expenses after joining. Wallet needed before settlement.";
+    return "Waiting for them to accept.";
   }
 
   if (!member.walletAddress) {

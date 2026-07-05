@@ -23,7 +23,7 @@ function nextStepLabel(summary: TabSummaryResponse) {
   }
 
   if (summary.memberCount < 2) {
-    return "Add members";
+    return "Invite members";
   }
 
   return "Open tab";

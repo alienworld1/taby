@@ -15,12 +15,12 @@ export function ExpensePlaceholder({ memberCount, tab }: ExpensePlaceholderProps
     ? "This tab is read-only."
     : memberCount > 1
       ? "This tab is ready for expenses."
-      : "Add members first. Expenses come next.";
+      : "Invite members first. Expenses come next.";
   const description = isReadOnly
     ? "You can still review the people and tab details."
     : memberCount > 1
       ? "You have the group shape in place. Expense entry is the next step."
-      : "Start with the people who should review expenses in this tab.";
+      : "Start with registered Taby accounts who should review expenses in this tab.";
 
   return (
     <Card className="flex flex-col gap-3 sm:flex-row sm:items-center">

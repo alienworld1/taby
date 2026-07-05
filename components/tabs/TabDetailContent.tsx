@@ -5,8 +5,9 @@ import { FiFileText } from "react-icons/fi";
 import { motion } from "motion/react";
 import { SignInPrompt } from "@/components/auth/SignInPrompt";
 import { useAuth } from "@/components/auth/useAuth";
-import { AddMemberSheet } from "@/components/tabs/AddMemberSheet";
 import { ExpensePlaceholder } from "@/components/tabs/ExpensePlaceholder";
+import { InviteAcceptancePanel } from "@/components/tabs/InviteAcceptancePanel";
+import { InviteMemberSheet } from "@/components/tabs/InviteMemberSheet";
 import { MemberPanel } from "@/components/tabs/MemberPanel";
 import { SetupProgressStrip } from "@/components/tabs/SetupProgressStrip";
 import { TabHeader } from "@/components/tabs/TabHeader";
@@ -16,8 +17,9 @@ import { ErrorCallout } from "@/components/ui/ErrorCallout";
 import { LoadingState } from "@/components/ui/LoadingState";
 import { accountErrorMessage } from "@/lib/account/messages";
 import {
-  addMemberRequest,
+  acceptInviteRequest,
   fetchTabDetail,
+  inviteMemberRequest,
   toTabClientError,
   type TabClientError,
 } from "@/lib/tabs/client";
@@ -36,6 +38,8 @@ export function TabDetailContent({ tabId }: TabDetailContentProps) {
   const [addError, setAddError] = useState<TabClientError | null>(null);
   const [addOpen, setAddOpen] = useState(false);
   const [addSubmitting, setAddSubmitting] = useState(false);
+  const [acceptError, setAcceptError] = useState<TabClientError | null>(null);
+  const [acceptSubmitting, setAcceptSubmitting] = useState(false);
   const [detail, setDetail] = useState<TabDetailResponse | null>(null);
   const [fetchError, setFetchError] = useState<TabClientError | null>(null);
   const [isLoading, setIsLoading] = useState(false);
@@ -92,7 +96,7 @@ export function TabDetailContent({ tabId }: TabDetailContentProps) {
     );
   }, [account, detail]);
 
-  async function handleAddMember(displayName: string) {
+  async function handleInviteMember(email: string) {
     if (!detail) {
       return false;
     }
@@ -112,7 +116,7 @@ export function TabDetailContent({ tabId }: TabDetailContentProps) {
     }
 
     try {
-      const created = await addMemberRequest(didToken, detail.tab.id, { displayName });
+      const created = await inviteMemberRequest(didToken, detail.tab.id, { email });
       setDetail((currentDetail) =>
         currentDetail
           ? {
@@ -129,13 +133,51 @@ export function TabDetailContent({ tabId }: TabDetailContentProps) {
         clientError.code === "unauthorized" && !isOwner
           ? {
               ...clientError,
-              message: "Only the owner can add members.",
+              message: "Only the owner can invite members.",
             }
           : clientError,
       );
       return false;
     } finally {
       setAddSubmitting(false);
+    }
+  }
+
+  async function handleAcceptInvite() {
+    if (!detail) {
+      return;
+    }
+
+    setAcceptSubmitting(true);
+    setAcceptError(null);
+
+    const didToken = await getDidToken();
+
+    if (!didToken) {
+      setAcceptError({
+        code: "unauthenticated",
+        message: "Sign in to continue.",
+      });
+      setAcceptSubmitting(false);
+      return;
+    }
+
+    try {
+      const accepted = await acceptInviteRequest(didToken, detail.tab.id);
+      setDetail((currentDetail) =>
+        currentDetail
+          ? {
+              ...currentDetail,
+              members: currentDetail.members.map((member) =>
+                member.id === accepted.member.id ? accepted.member : member,
+              ),
+            }
+          : currentDetail,
+      );
+    } catch (error) {
+      setAcceptError(toTabClientError(error));
+    } finally {
+      setAcceptSubmitting(false);
     }
   }
 
@@ -190,6 +232,24 @@ export function TabDetailContent({ tabId }: TabDetailContentProps) {
   }
 
   const visibleMembers = detail.members.filter((member) => member.joinStatus !== "removed");
+  const currentMember = account
+    ? detail.members.find((member) => member.userId === account.id) ?? null
+    : null;
+
+  if (currentMember?.joinStatus === "invited" && !isOwner) {
+    return (
+      <InviteAcceptancePanel
+        error={acceptError}
+        loading={acceptSubmitting}
+        memberCount={visibleMembers.length}
+        ownerDisplayName={
+          detail.members.find((member) => member.role === "owner")?.displayName ?? null
+        }
+        tab={detail.tab}
+        onAccept={handleAcceptInvite}
+      />
+    );
+  }
 
   return (
     <>
@@ -211,7 +271,7 @@ export function TabDetailContent({ tabId }: TabDetailContentProps) {
           isOwner={isOwner}
           members={detail.members}
           tab={detail.tab}
-          onAddMember={() => {
+          onInviteMember={() => {
             setAddError(null);
             setAddOpen(true);
           }}
@@ -219,10 +279,9 @@ export function TabDetailContent({ tabId }: TabDetailContentProps) {
         <ExpensePlaceholder memberCount={visibleMembers.length} tab={detail.tab} />
       </motion.div>
 
-      <AddMemberSheet
+      <InviteMemberSheet
         error={addError}
         loading={addSubmitting}
-        members={detail.members}
         open={addOpen}
         onOpenChange={(open) => {
           setAddOpen(open);
@@ -230,7 +289,7 @@ export function TabDetailContent({ tabId }: TabDetailContentProps) {
             setAddError(null);
           }
         }}
-        onSubmit={handleAddMember}
+        onSubmit={handleInviteMember}
       />
     </>
   );

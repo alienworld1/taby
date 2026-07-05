@@ -10,12 +10,12 @@ type MemberPanelProps = {
   isOwner: boolean;
   members: TabMemberResponse[];
   tab: TabResponse;
-  onAddMember: () => void;
+  onInviteMember: () => void;
 };
 
 function disabledReason(tab: TabResponse, isOwner: boolean) {
   if (!isOwner) {
-    return "Only the owner can add members.";
+    return "Only the owner can invite members.";
   }
 
   if (tab.status === "settled" || tab.status === "cancelled") {
@@ -25,7 +25,7 @@ function disabledReason(tab: TabResponse, isOwner: boolean) {
   return null;
 }
 
-export function MemberPanel({ isOwner, members, tab, onAddMember }: MemberPanelProps) {
+export function MemberPanel({ isOwner, members, tab, onInviteMember }: MemberPanelProps) {
   const visibleMembers = members.filter((member) => member.joinStatus !== "removed");
   const reason = disabledReason(tab, isOwner);
 
@@ -35,7 +35,7 @@ export function MemberPanel({ isOwner, members, tab, onAddMember }: MemberPanelP
         <div>
           <h2 className="text-xl font-semibold text-foreground">Members</h2>
           <p className="mt-1 text-sm leading-6 text-muted">
-            Add people by name now. Wallet details can come later, before settlement.
+            Invite people who already have a Taby account.
           </p>
         </div>
         {reason ? (
@@ -44,8 +44,8 @@ export function MemberPanel({ isOwner, members, tab, onAddMember }: MemberPanelP
             {reason}
           </span>
         ) : (
-          <Button icon={<FiUserPlus aria-hidden="true" />} onClick={onAddMember}>
-            Add member
+          <Button icon={<FiUserPlus aria-hidden="true" />} onClick={onInviteMember}>
+            Invite member
           </Button>
         )}
       </div>
