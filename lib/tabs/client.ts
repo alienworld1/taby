@@ -25,6 +25,9 @@ export type AddMemberResponse = {
   member: TabMemberResponse;
 };
 
+export type InviteMemberResponse = AddMemberResponse;
+export type AcceptInviteResponse = AddMemberResponse;
+
 function isTabErrorCode(value: unknown): value is TabErrorCode {
   return (
     value === "unauthenticated" ||
@@ -37,7 +40,11 @@ function isTabErrorCode(value: unknown): value is TabErrorCode {
     value === "invalid_amount" ||
     value === "invalid_split_total" ||
     value === "invalid_member" ||
+    value === "invite_not_found" ||
+    value === "member_already_exists" ||
     value === "invalid_transition" ||
+    value === "self_invite" ||
+    value === "user_not_found" ||
     value === "expense_not_involved" ||
     value === "proposal_not_ready" ||
     value === "settlement_engine_unavailable" ||
@@ -141,6 +148,24 @@ export function addMemberRequest(
 ) {
   return requestTaby<AddMemberResponse>(`/api/tabs/${tabId}/members`, didToken, {
     body: JSON.stringify(input),
+    method: "POST",
+  });
+}
+
+export function inviteMemberRequest(
+  didToken: string,
+  tabId: string,
+  input: { email: string },
+) {
+  return requestTaby<InviteMemberResponse>(`/api/tabs/${tabId}/invites`, didToken, {
+    body: JSON.stringify(input),
+    method: "POST",
+  });
+}
+
+export function acceptInviteRequest(didToken: string, tabId: string) {
+  return requestTaby<AcceptInviteResponse>(`/api/tabs/${tabId}/invites/accept`, didToken, {
+    body: JSON.stringify({}),
     method: "POST",
   });
 }

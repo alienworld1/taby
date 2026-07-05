@@ -9,7 +9,11 @@ export type TabErrorCode =
   | "invalid_amount"
   | "invalid_split_total"
   | "invalid_member"
+  | "invite_not_found"
+  | "member_already_exists"
   | "invalid_transition"
+  | "self_invite"
+  | "user_not_found"
   | "expense_not_involved"
   | "proposal_not_ready"
   | "settlement_engine_unavailable"
@@ -103,7 +107,9 @@ export type ExpenseResponse = {
 };
 
 export type TabSummaryResponse = {
+  currentMember: TabMemberResponse | null;
   memberCount: number;
+  ownerDisplayName: string | null;
   tab: TabResponse;
 };
 

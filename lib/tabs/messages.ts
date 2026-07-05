@@ -18,8 +18,16 @@ export function tabErrorMessage(code: TabErrorCode) {
       return "The split needs to add up to the expense total.";
     case "invalid_member":
       return "Choose a member from this tab.";
+    case "invite_not_found":
+      return "This invite is no longer available.";
+    case "member_already_exists":
+      return "They are already in this tab.";
     case "invalid_transition":
       return "That change is no longer available.";
+    case "self_invite":
+      return "You are already the owner of this tab.";
+    case "user_not_found":
+      return "That email is not on Taby yet.";
     case "expense_not_involved":
       return "Only members included in this expense can confirm it.";
     case "proposal_not_ready":
