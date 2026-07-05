@@ -7,6 +7,7 @@ import { motion } from "motion/react";
 import { SignInPrompt } from "@/components/auth/SignInPrompt";
 import { useAuth } from "@/components/auth/useAuth";
 import { CreateTabSheet } from "@/components/tabs/CreateTabSheet";
+import { InviteGroup } from "@/components/tabs/InviteGroup";
 import { TabGroup } from "@/components/tabs/TabGroup";
 import { Button } from "@/components/ui/Button";
 import { EmptyState } from "@/components/ui/EmptyState";
@@ -15,6 +16,7 @@ import { LoadingState } from "@/components/ui/LoadingState";
 import { accountErrorMessage } from "@/lib/account/messages";
 import {
   createTabRequest,
+  acceptInviteRequest,
   fetchTabs,
   toTabClientError,
   type TabClientError,
@@ -24,12 +26,15 @@ import type { TabSummaryResponse } from "@/lib/tabs/types";
 const ACTIVE_STATUSES = new Set(["active", "review", "locked", "settling"]);
 
 export function DashboardContent() {
-  const { errorCode, getDidToken, retryAccountSetup, status } = useAuth();
+  const { account, errorCode, getDidToken, retryAccountSetup, status } = useAuth();
   const router = useRouter();
   const searchParams = useSearchParams();
   const [createError, setCreateError] = useState<TabClientError | null>(null);
   const [createOpen, setCreateOpen] = useState(() => searchParams.get("create") === "1");
   const [createSubmitting, setCreateSubmitting] = useState(false);
+  const [acceptError, setAcceptError] = useState<TabClientError | null>(null);
+  const [acceptingTabId, setAcceptingTabId] = useState<string | null>(null);
+  const [dismissedInviteIds, setDismissedInviteIds] = useState<string[]>([]);
   const [fetchError, setFetchError] = useState<TabClientError | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [tabs, setTabs] = useState<TabSummaryResponse[]>([]);
@@ -77,16 +82,28 @@ export function DashboardContent() {
   }, [loadTabs]);
 
   const groupedTabs = useMemo(() => {
-    const actionNeeded = tabs.filter(
+    const visibleInvites = tabs.filter(
+      (summary) =>
+        summary.currentMember?.joinStatus === "invited" &&
+        !dismissedInviteIds.includes(summary.tab.id),
+    );
+    const joinedTabs = tabs.filter((summary) => {
+      if (summary.currentMember) {
+        return summary.currentMember.joinStatus === "joined";
+      }
+
+      return account ? summary.tab.ownerUserId === account.id : false;
+    });
+    const actionNeeded = joinedTabs.filter(
       (summary) => ACTIVE_STATUSES.has(summary.tab.status) && summary.memberCount < 2,
     );
-    const active = tabs.filter(
+    const active = joinedTabs.filter(
       (summary) => ACTIVE_STATUSES.has(summary.tab.status) && summary.memberCount >= 2,
     );
-    const settled = tabs.filter((summary) => summary.tab.status === "settled");
+    const settled = joinedTabs.filter((summary) => summary.tab.status === "settled");
 
-    return { actionNeeded, active, settled };
-  }, [tabs]);
+    return { actionNeeded, active, invites: visibleInvites, settled };
+  }, [account, dismissedInviteIds, tabs]);
 
   async function handleCreate(input: { description?: string; title: string }) {
     setCreateSubmitting(true);
@@ -106,7 +123,12 @@ export function DashboardContent() {
     try {
       const created = await createTabRequest(didToken, input);
       setTabs((currentTabs) => [
-        { memberCount: 1, tab: created.tab },
+        {
+          currentMember: created.ownerMember,
+          memberCount: 1,
+          ownerDisplayName: created.ownerMember.displayName,
+          tab: created.tab,
+        },
         ...currentTabs.filter((summary) => summary.tab.id !== created.tab.id),
       ]);
       setCreateOpen(false);
@@ -117,6 +139,38 @@ export function DashboardContent() {
       return false;
     } finally {
       setCreateSubmitting(false);
+    }
+  }
+
+  async function handleAcceptInvite(tabId: string) {
+    setAcceptingTabId(tabId);
+    setAcceptError(null);
+
+    const didToken = await getDidToken();
+
+    if (!didToken) {
+      setAcceptError({
+        code: "unauthenticated",
+        message: "Sign in to continue.",
+      });
+      setAcceptingTabId(null);
+      return;
+    }
+
+    try {
+      const accepted = await acceptInviteRequest(didToken, tabId);
+      setTabs((currentTabs) =>
+        currentTabs.map((summary) =>
+          summary.tab.id === tabId
+            ? { ...summary, currentMember: accepted.member }
+            : summary,
+        ),
+      );
+      router.push(`/tabs/${tabId}`);
+    } catch (error) {
+      setAcceptError(toTabClientError(error));
+    } finally {
+      setAcceptingTabId(null);
     }
   }
 
@@ -156,6 +210,9 @@ export function DashboardContent() {
             title="We could not load your tabs"
           />
         ) : null}
+        {acceptError ? (
+          <ErrorCallout message={acceptError.message} title="We could not accept that invite" />
+        ) : null}
 
         {tabs.length === 0 && !fetchError ? (
           <motion.div animate={{ opacity: 1, y: 0 }} initial={{ opacity: 0, y: 8 }}>
@@ -191,6 +248,14 @@ export function DashboardContent() {
               emptyCopy="Tabs that need one more person will appear here."
               tabs={groupedTabs.actionNeeded}
               title="Needs setup"
+            />
+            <InviteGroup
+              acceptingTabId={acceptingTabId}
+              invites={groupedTabs.invites}
+              onAccept={handleAcceptInvite}
+              onDismiss={(tabId) =>
+                setDismissedInviteIds((currentIds) => [...new Set([...currentIds, tabId])])
+              }
             />
             <TabGroup tabs={groupedTabs.active} title="Active tabs" />
             <TabGroup tabs={groupedTabs.settled} title="Settled tabs" />
