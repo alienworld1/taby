@@ -28,6 +28,7 @@ Before writing custom logic, check if a trusted, well-tested library already sol
 - If the project needs a custom color/design system, set it up in `globals.css` theme variables *before* building components, so agents reference tokens instead of inventing new colors ad hoc.
 - Beyond design tokens, `globals.css` should stay minimal — just Tailwind directives, theme variables, and true global resets, not component-specific styles.
 - **Use `react-icons`** for all icons. Don't hand-draw custom SVG icons.
+- Don't make the page too static. Use `motion` to animate it whenever a page is too static/boring.
 
 ## User-facing copy
 
