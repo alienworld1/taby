@@ -5,7 +5,7 @@ import { FiFileText } from "react-icons/fi";
 import { motion } from "motion/react";
 import { SignInPrompt } from "@/components/auth/SignInPrompt";
 import { useAuth } from "@/components/auth/useAuth";
-import { ExpensePlaceholder } from "@/components/tabs/ExpensePlaceholder";
+import { ExpenseWorkspace } from "@/components/tabs/ExpenseWorkspace";
 import { InviteAcceptancePanel } from "@/components/tabs/InviteAcceptancePanel";
 import { InviteMemberSheet } from "@/components/tabs/InviteMemberSheet";
 import { MemberPanel } from "@/components/tabs/MemberPanel";
@@ -276,7 +276,13 @@ export function TabDetailContent({ tabId }: TabDetailContentProps) {
             setAddOpen(true);
           }}
         />
-        <ExpensePlaceholder memberCount={visibleMembers.length} tab={detail.tab} />
+        <ExpenseWorkspace
+          currentMember={currentMember ?? null}
+          detail={detail}
+          getDidToken={getDidToken}
+          onDetailChange={setDetail}
+          onRefetch={loadDetail}
+        />
       </motion.div>
 
       <InviteMemberSheet
