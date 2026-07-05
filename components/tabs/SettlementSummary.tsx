@@ -1,9 +1,10 @@
 "use client";
 
 import { useMemo } from "react";
-import { FiCheckCircle, FiDollarSign, FiRefreshCcw, FiRepeat } from "react-icons/fi";
+import { FiDollarSign, FiRefreshCcw, FiRepeat } from "react-icons/fi";
 import { motion } from "motion/react";
 import { MemberBalanceList } from "@/components/tabs/MemberBalanceList";
+import { SettlementGraphSection } from "@/components/tabs/SettlementGraphSection";
 import { SettlementTransferList } from "@/components/tabs/SettlementTransferList";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
@@ -76,51 +77,37 @@ export function SettlementSummary({ detail, onRefresh }: SettlementSummaryProps)
   }
 
   const isEven = result.settlementCount === 0;
+  const graphKey = [
+    result.rawIouCount,
+    result.settlementCount,
+    result.totalMovingBaseUnits,
+    result.eligibleExpenseIds.join(","),
+    result.excludedExpenseIds.join(","),
+  ].join(":");
 
   return (
     <section aria-labelledby="settlement-heading" className="grid gap-4">
       <div>
         <h2 id="settlement-heading" className="text-xl font-semibold text-foreground">
-          Settlement
+          Settlement graph
         </h2>
         <p className="mt-1 text-sm leading-6 text-muted">
-          Confirmed expenses become the final settlement your group can review.
+          Confirmed expenses compress into the transfers your group can review.
         </p>
       </div>
 
       <motion.div
-        key={`${result.rawIouCount}:${result.settlementCount}:${result.totalMovingBaseUnits}`}
+        key={graphKey}
         initial={{ opacity: 0, y: 8 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.18 }}
       >
         <Card className="grid gap-5">
-          <div className="flex items-start gap-3">
-            <div className="grid size-10 shrink-0 place-items-center rounded-full bg-primary-soft text-primary-strong">
-              {isEven ? (
-                <FiCheckCircle aria-hidden="true" />
-              ) : (
-                <FiRepeat aria-hidden="true" />
-              )}
-            </div>
-            <div className="min-w-0">
-              <motion.p
-                key={result.summaryText}
-                className="text-2xl font-semibold leading-8 text-foreground"
-                initial={{ opacity: 0, y: 4 }}
-                animate={{ opacity: 1, y: 0 }}
-              >
-                {isEven ? "Everyone is even." : result.summaryText}
-              </motion.p>
-              <p className="mt-1 text-sm leading-6 text-muted">
-                {isEven
-                  ? "The confirmed expenses cancel out, so there is nothing to settle."
-                  : `${result.eligibleExpenseIds.length} confirmed ${
-                      result.eligibleExpenseIds.length === 1 ? "expense is" : "expenses are"
-                    } included.`}
-              </p>
-            </div>
-          </div>
+          <SettlementGraphSection
+            key={graphKey}
+            detail={detail}
+            settlement={result}
+          />
 
           {!isEven ? (
             <div className="flex flex-col gap-2 rounded-md border border-outline-variant bg-surface-container-low px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
@@ -136,14 +123,6 @@ export function SettlementSummary({ detail, onRefresh }: SettlementSummaryProps)
 
           <SettlementTransferList membersById={membersById} transfers={result.transfers} />
           <MemberBalanceList balances={result.balances} />
-
-          {result.excludedExpenseIds.length > 0 ? (
-            <p className="text-sm leading-6 text-muted">
-              {result.excludedExpenseIds.length}{" "}
-              {result.excludedExpenseIds.length === 1 ? "expense is" : "expenses are"} still
-              outside settlement.
-            </p>
-          ) : null}
         </Card>
       </motion.div>
     </section>
