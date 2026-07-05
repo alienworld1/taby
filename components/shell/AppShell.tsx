@@ -6,11 +6,17 @@ import { appNavigation } from "@/lib/navigation";
 
 type AppShellProps = {
   children: ReactNode;
+  createActionLabel?: string;
   eyebrow?: string;
   title: string;
 };
 
-export function AppShell({ children, eyebrow, title }: AppShellProps) {
+export function AppShell({
+  children,
+  createActionLabel = "Create tab",
+  eyebrow,
+  title,
+}: AppShellProps) {
   return (
     <div className="min-h-screen bg-background">
       <header className="border-b border-outline-variant bg-surface-container-lowest/85 backdrop-blur">
@@ -48,7 +54,7 @@ export function AppShell({ children, eyebrow, title }: AppShellProps) {
             <h1 className="mt-2 text-3xl font-semibold leading-10 text-foreground">{title}</h1>
           </div>
           <div className="flex flex-col items-start gap-2 sm:items-end">
-            <AuthActionButton>Create your first tab</AuthActionButton>
+            <AuthActionButton>{createActionLabel}</AuthActionButton>
           </div>
         </div>
         {children}
