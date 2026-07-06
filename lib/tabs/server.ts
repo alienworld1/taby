@@ -104,6 +104,7 @@ function tabDto(tab: Tab): TabResponse {
     id: tab.id,
     networkChainId: tab.networkChainId,
     ownerUserId: tab.ownerUserId,
+    settlementContractAddress: normalizeEvmAddress(getSettlementContractAddress()),
     status: tab.status,
     title: tab.title,
     tokenAddress: tab.tokenAddress,
@@ -1315,9 +1316,9 @@ export async function recordTabAuthorization(input: {
   const memberId = input.memberId;
   const walletAddress = normalizeEvmAddress(input.walletAddress);
   const tokenAddress = normalizeEvmAddress(input.tokenAddress);
-  const configuredContract = getSettlementContractAddress();
+  const configuredContract = normalizeEvmAddress(getSettlementContractAddress());
   const settlementContractAddress =
-    normalizeEvmAddress(input.settlementContractAddress) ?? configuredContract?.toLowerCase();
+    normalizeEvmAddress(input.settlementContractAddress) ?? configuredContract;
   const cap = parseBaseUnits(input.capBaseUnits);
   const maxSingle = parseBaseUnits(input.maxSingleSettlementBaseUnits);
   const expiresAt = parseFutureDate(input.expiresAt);
@@ -1329,7 +1330,7 @@ export async function recordTabAuthorization(input: {
         ? input.allowanceTxHash
         : "";
 
-  if (!settlementContractAddress) {
+  if (!configuredContract || !settlementContractAddress) {
     return fail("configuration_missing", 503);
   }
 
@@ -1337,6 +1338,7 @@ export async function recordTabAuthorization(input: {
     !walletAddress ||
     !tokenAddress ||
     tokenAddress !== TABY_USDC_ADDRESS.toLowerCase() ||
+    settlementContractAddress !== configuredContract ||
     !cap ||
     !maxSingle ||
     cap < maxSingle ||
@@ -1365,8 +1367,49 @@ export async function recordTabAuthorization(input: {
     return fail("unauthorized", 403);
   }
 
+  if (normalizeEvmAddress(access.data.currentMember.walletAddress) !== walletAddress) {
+    return fail("unauthorized", 403);
+  }
+
+  if (
+    access.data.tab.tokenAddress.toLowerCase() !== TABY_USDC_ADDRESS.toLowerCase() ||
+    access.data.tab.networkChainId !== TABY_CHAIN_ID
+  ) {
+    return fail("configuration_missing", 503);
+  }
+
   try {
     const db = getDb();
+    const [lockedProposal] = await db
+      .select()
+      .from(settlementProposals)
+      .where(
+        and(
+          eq(settlementProposals.tabId, tabId),
+          eq(settlementProposals.status, "locked"),
+        ),
+      )
+      .orderBy(desc(settlementProposals.createdAt))
+      .limit(1);
+
+    if (!lockedProposal) {
+      return fail("proposal_not_ready", 409);
+    }
+
+    const proposal = proposalDto(lockedProposal);
+
+    if (new Date(proposal.expiresAt).getTime() <= Date.now()) {
+      return fail("invalid_transition", 409);
+    }
+
+    const owed = proposal.transfers
+      .filter((transfer) => transfer.fromMemberId === memberId)
+      .reduce((total, transfer) => total + BigInt(transfer.amountBaseUnits), BigInt(0));
+
+    if (owed <= BigInt(0) || maxSingle !== owed || cap < owed) {
+      return fail("validation_failed", 422);
+    }
+
     const result = await db.transaction(async (tx) => {
       const [authorization] = await tx
         .insert(tabAuthorizations)
@@ -1404,12 +1447,107 @@ export async function recordTabAuthorization(input: {
     return {
       data: {
         activity: activityDto(result.activity),
-        authorization: {
-          ...result.authorization,
-          capBaseUnits: result.authorization.capBaseUnits.toString(),
-          maxSingleSettlementBaseUnits:
-            result.authorization.maxSingleSettlementBaseUnits.toString(),
-        },
+        authorization: authorizationDto(result.authorization),
+      },
+      ok: true,
+    } satisfies TabResult<unknown>;
+  } catch {
+    return fail("database_unavailable", 503);
+  }
+}
+
+export async function revokeTabAuthorization(input: {
+  authorizationId: unknown;
+  didToken: unknown;
+  revokeTxHash?: unknown;
+}) {
+  const currentUser = await getCurrentUser(input.didToken);
+
+  if (!currentUser.ok) {
+    return currentUser;
+  }
+
+  if (!isUuid(input.authorizationId)) {
+    return fail("validation_failed", 422);
+  }
+
+  const revokeTxHash: string | null =
+    input.revokeTxHash === undefined || input.revokeTxHash === null
+      ? null
+      : typeof input.revokeTxHash === "string"
+        ? input.revokeTxHash
+        : "";
+
+  if (revokeTxHash !== null && !isEvmTxHash(revokeTxHash)) {
+    return fail("validation_failed", 422);
+  }
+
+  try {
+    const db = getDb();
+    const [authorization] = await db
+      .select()
+      .from(tabAuthorizations)
+      .where(eq(tabAuthorizations.id, input.authorizationId));
+
+    if (!authorization) {
+      return fail("not_found", 404);
+    }
+
+    const access = await getAccessContext(authorization.tabId, currentUser.data.user.id);
+
+    if (!access.ok) {
+      return access;
+    }
+
+    if (
+      !access.data.currentMember ||
+      access.data.currentMember.id !== authorization.memberId ||
+      access.data.currentMember.joinStatus !== "joined"
+    ) {
+      return fail("unauthorized", 403);
+    }
+
+    if (authorization.revokedAt) {
+      return fail("invalid_transition", 409);
+    }
+
+    if (
+      access.data.tab.status === "settling" ||
+      access.data.tab.status === "settled" ||
+      access.data.tab.status === "cancelled"
+    ) {
+      return fail("invalid_transition", 409);
+    }
+
+    const now = new Date();
+    const result = await db.transaction(async (tx) => {
+      const [updatedAuthorization] = await tx
+        .update(tabAuthorizations)
+        .set({ revokedAt: now, updatedAt: now })
+        .where(eq(tabAuthorizations.id, authorization.id))
+        .returning();
+
+      const [activity] = await tx
+        .insert(activityEvents)
+        .values({
+          actorUserId: currentUser.data.user.id,
+          eventData: {
+            authorizationId: authorization.id,
+            memberId: authorization.memberId,
+            revokeTxHash,
+          },
+          eventType: "authorization_revoked",
+          tabId: authorization.tabId,
+        })
+        .returning();
+
+      return { activity, authorization: updatedAuthorization };
+    });
+
+    return {
+      data: {
+        activity: activityDto(result.activity),
+        authorization: authorizationDto(result.authorization),
       },
       ok: true,
     } satisfies TabResult<unknown>;

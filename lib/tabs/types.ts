@@ -100,6 +100,7 @@ export type TabResponse = {
   id: string;
   networkChainId: number;
   ownerUserId: string;
+  settlementContractAddress: string | null;
   status: TabStatus;
   title: string;
   tokenAddress: string;

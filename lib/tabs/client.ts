@@ -5,6 +5,7 @@ import type {
   ExpenseResponse,
   ExpenseSplitResponse,
   SettlementProposalMutationResponse,
+  TabAuthorizationResponse,
   TabDetailResponse,
   TabErrorCode,
   TabMemberResponse,
@@ -52,6 +53,11 @@ export type RemoveExpenseResponse = {
 };
 
 export type ProposalMutationResponse = SettlementProposalMutationResponse;
+
+export type AuthorizationMutationResponse = {
+  activity: ActivityEventResponse;
+  authorization: TabAuthorizationResponse;
+};
 
 function isTabErrorCode(value: unknown): value is TabErrorCode {
   return (
@@ -253,6 +259,46 @@ export function cancelProposalRequest(didToken: string, proposalId: string) {
     didToken,
     {
       body: JSON.stringify({}),
+      method: "POST",
+    },
+  );
+}
+
+export function recordAuthorizationRequest(
+  didToken: string,
+  tabId: string,
+  input: {
+    allowanceTxHash: string;
+    authorizationMethod: "erc20_allowance";
+    capBaseUnits: string;
+    expiresAt: string;
+    maxSingleSettlementBaseUnits: string;
+    memberId: string;
+    settlementContractAddress: string;
+    tokenAddress: string;
+    walletAddress: string;
+  },
+) {
+  return requestTaby<AuthorizationMutationResponse>(
+    `/api/tabs/${tabId}/authorizations`,
+    didToken,
+    {
+      body: JSON.stringify(input),
+      method: "POST",
+    },
+  );
+}
+
+export function revokeAuthorizationRequest(
+  didToken: string,
+  authorizationId: string,
+  input: { revokeTxHash?: string | null },
+) {
+  return requestTaby<AuthorizationMutationResponse>(
+    `/api/authorizations/${authorizationId}/revoke`,
+    didToken,
+    {
+      body: JSON.stringify(input),
       method: "POST",
     },
   );
