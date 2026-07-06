@@ -36,7 +36,7 @@ function isAccessError(error: TabClientError | null) {
 }
 
 export function TabDetailContent({ tabId }: TabDetailContentProps) {
-  const { account, errorCode, getDidToken, retryAccountSetup, status } = useAuth();
+  const { account, errorCode, getDidToken, requestWallet, retryAccountSetup, status } = useAuth();
   const [addError, setAddError] = useState<TabClientError | null>(null);
   const [addOpen, setAddOpen] = useState(false);
   const [addSubmitting, setAddSubmitting] = useState(false);
@@ -287,10 +287,12 @@ export function TabDetailContent({ tabId }: TabDetailContentProps) {
         />
         <SettlementSummary detail={detail} onRefresh={loadDetail} />
         <SettlementProposalSection
+          account={account}
           currentMember={currentMember ?? null}
           detail={detail}
           getDidToken={getDidToken}
           onRefetch={loadDetail}
+          requestWallet={requestWallet}
         />
       </motion.div>
 
