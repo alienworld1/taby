@@ -18,6 +18,9 @@ export type ProposalBlocker = {
     | "disputed_expense"
     | "missing_wallet"
     | "missing_authorization"
+    | "expired_authorization"
+    | "revoked_authorization"
+    | "insufficient_authorization"
     | "expired_proposal"
     | "stale_proposal"
     | "invalid_state";
@@ -124,16 +127,6 @@ export function buildProposalBlockers(input: {
   }
 
   const memberById = new Map(input.detail.members.map((member) => [member.id, member]));
-  const activeAuthorizationMembers = new Set(
-    input.authorizations
-      .filter(
-        (authorization) =>
-          !authorization.revokedAt &&
-          (input.nowMs === null ||
-            new Date(authorization.expiresAt).getTime() > input.nowMs),
-      )
-      .map((authorization) => authorization.memberId),
-  );
   const transferMemberIds = new Set(
     transfers.flatMap((transfer) => [transfer.fromMemberId, transfer.toMemberId]),
   );
@@ -158,8 +151,14 @@ export function buildProposalBlockers(input: {
 
   for (const debtorMemberId of debtorMemberIds) {
     const member = memberById.get(debtorMemberId);
+    const owed = transfers
+      .filter((transfer) => transfer.fromMemberId === debtorMemberId)
+      .reduce((total, transfer) => total + BigInt(transfer.amountBaseUnits), BigInt(0));
+    const authorization = input.authorizations
+      .filter((item) => item.memberId === debtorMemberId)
+      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())[0];
 
-    if (!activeAuthorizationMembers.has(debtorMemberId)) {
+    if (!authorization) {
       blockers.push({
         blocksCreate: false,
         blocksFutureSettlement: true,
@@ -167,6 +166,39 @@ export function buildProposalBlockers(input: {
         id: `authorization-${debtorMemberId}`,
         kind: "missing_authorization",
         message: `${member?.displayName ?? "A member"} still needs to authorize their share.`,
+        severity: "warning",
+      });
+    } else if (authorization.revokedAt) {
+      blockers.push({
+        blocksCreate: false,
+        blocksFutureSettlement: true,
+        blocksLock: false,
+        id: `authorization-revoked-${debtorMemberId}`,
+        kind: "revoked_authorization",
+        message: `${member?.displayName ?? "A member"} revoked authorization for their share.`,
+        severity: "warning",
+      });
+    } else if (
+      input.nowMs !== null &&
+      new Date(authorization.expiresAt).getTime() <= input.nowMs
+    ) {
+      blockers.push({
+        blocksCreate: false,
+        blocksFutureSettlement: true,
+        blocksLock: false,
+        id: `authorization-expired-${debtorMemberId}`,
+        kind: "expired_authorization",
+        message: `${member?.displayName ?? "A member"} needs to authorize again because their permission expired.`,
+        severity: "warning",
+      });
+    } else if (BigInt(authorization.capBaseUnits) < owed) {
+      blockers.push({
+        blocksCreate: false,
+        blocksFutureSettlement: true,
+        blocksLock: false,
+        id: `authorization-insufficient-${debtorMemberId}`,
+        kind: "insufficient_authorization",
+        message: `${member?.displayName ?? "A member"} needs a cap that covers their share.`,
         severity: "warning",
       });
     }
