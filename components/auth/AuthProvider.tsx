@@ -15,6 +15,10 @@ type AuthContextValue = {
   status: AuthStatus;
   closeSignIn: () => void;
   getDidToken: () => Promise<string | null>;
+  requestWallet: <T = unknown>(payload: {
+    method: string;
+    params?: unknown[];
+  }) => Promise<T>;
   openSignIn: () => void;
   retryAccountSetup: () => Promise<void>;
   signIn: () => Promise<void>;
@@ -282,6 +286,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, [magic]);
 
+  const requestWallet = useCallback(
+    async <T,>(payload: { method: string; params?: unknown[] }) => {
+      if (!magic) {
+        throw new Error("wallet_unavailable");
+      }
+
+      return magic.rpcProvider.request<T>(payload);
+    },
+    [magic],
+  );
+
   const updateDisplayName = useCallback(
     async (displayName: string) => {
       if (!magic) {
@@ -327,6 +342,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       isSignInOpen,
       magicReady,
       openSignIn: () => setIsSignInOpen(true),
+      requestWallet,
       retryAccountSetup,
       signIn,
       signOut,
@@ -339,6 +355,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       getDidToken,
       isSignInOpen,
       magicReady,
+      requestWallet,
       retryAccountSetup,
       signIn,
       signOut,
