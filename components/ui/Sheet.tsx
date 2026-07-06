@@ -1,6 +1,6 @@
 "use client";
 
-import type { ReactNode } from "react";
+import { useId, type ReactNode } from "react";
 import { FiX } from "react-icons/fi";
 
 type SheetProps = {
@@ -18,12 +18,17 @@ export function Sheet({
   title,
   onOpenChange,
 }: SheetProps) {
+  const titleId = useId();
+  const descriptionId = useId();
+
   if (!open) {
     return null;
   }
 
   return (
     <div
+      aria-describedby={description ? descriptionId : undefined}
+      aria-labelledby={titleId}
       aria-modal="true"
       className="fixed inset-0 z-40 grid items-end bg-inverse-surface/25 p-3 backdrop-blur-md sm:items-center sm:p-6"
       role="dialog"
@@ -31,9 +36,13 @@ export function Sheet({
       <div className="mx-auto w-full max-w-lg rounded-2xl border border-outline-variant bg-surface-container-lowest p-5 shadow-soft">
         <div className="relative min-h-10 pr-12">
           <div className="min-w-0">
-            <h2 className="break-words text-xl font-semibold leading-7">{title}</h2>
+            <h2 className="break-words text-xl font-semibold leading-7" id={titleId}>
+              {title}
+            </h2>
             {description ? (
-              <p className="mt-1 text-sm leading-6 text-muted">{description}</p>
+              <p className="mt-1 text-sm leading-6 text-muted" id={descriptionId}>
+                {description}
+              </p>
             ) : null}
           </div>
           <button
