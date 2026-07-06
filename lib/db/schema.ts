@@ -294,7 +294,7 @@ export const settlementProposals = pgTable(
   },
   (table) => [
     index("settlement_proposals_tab_id_idx").on(table.tabId),
-    uniqueIndex("settlement_proposals_proposal_hash_idx").on(table.proposalHash),
+    index("settlement_proposals_proposal_hash_idx").on(table.proposalHash),
   ],
 );
 
