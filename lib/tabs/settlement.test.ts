@@ -5,6 +5,7 @@ import {
   type SettlementEngineInput,
   type SettlementEngineResult,
 } from "./settlement";
+import { buildProposalHashPayload, hashProposalPayload } from "./proposals";
 
 const members = [
   member("a", "Alex"),
@@ -200,6 +201,45 @@ test("handles a realistic trip graph with dust, zero shares, and excluded expens
   assert.equal(result.rawIouCount, 15);
   assert.equal(result.totalMovingBaseUnits, "29249999");
   assertSettlementInvariants(result);
+});
+
+test("builds the same proposal hash for equivalent canonical settlement payloads", () => {
+  const tokenAddress = "0x75faf114eafb1bdbe2f0316df893fd58ce46aa4d";
+  const result = mustCalculate({
+    expenses: [
+      { ...expense("coffee", "a", "24000000"), tokenAddress },
+      { ...expense("pending", "b", "1000000"), status: "pending", tokenAddress },
+    ],
+    members: members.slice(0, 2),
+    splits: [
+      split("coffee", "a", "12000000"),
+      split("coffee", "b", "12000000"),
+      split("pending", "b", "1000000"),
+    ],
+    tokenAddress,
+  });
+  const first = buildProposalHashPayload({
+    excludedExpenseIds: ["pending"],
+    includedExpenseIds: ["coffee"],
+    networkChainId: 421614,
+    settlement: result,
+    tabId: "tab",
+    tokenAddress: "0x75FAF114EAFB1BDbe2F0316DF893fd58CE46AA4d",
+  });
+  const second = buildProposalHashPayload({
+    excludedExpenseIds: ["pending"],
+    includedExpenseIds: ["coffee"],
+    networkChainId: 421614,
+    settlement: {
+      ...result,
+      balances: [...result.balances].reverse(),
+      transfers: [...result.transfers].reverse(),
+    },
+    tabId: "tab",
+    tokenAddress: "0x75faf114eafb1bdbe2f0316df893fd58ce46aa4d",
+  });
+
+  assert.equal(hashProposalPayload(first), hashProposalPayload(second));
 });
 
 test("handles a complex reciprocal graph where many raw IOUs cancel out", () => {
