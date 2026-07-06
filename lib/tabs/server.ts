@@ -25,9 +25,19 @@ import {
   type ExpenseConfirmation,
   type ExpenseSplit,
   type Tab,
+  type TabAuthorization,
   type TabMember,
   type User,
 } from "@/lib/db/schema";
+import {
+  buildProposalHashPayload,
+  hashProposalPayload,
+  proposalDto,
+} from "@/lib/tabs/proposals";
+import {
+  calculateSettlement,
+  createSettlementInputsFromTabDetail,
+} from "@/lib/tabs/settlement";
 import {
   isEvmAddress,
   isEvmTxHash,
@@ -44,12 +54,14 @@ import type {
   ExpenseConfirmationResponse,
   ExpenseResponse,
   ExpenseSplitResponse,
+  SettlementProposalMutationResponse,
   TabDetailResponse,
   TabErrorCode,
   TabMemberResponse,
   TabResponse,
   TabResult,
   TabSummaryResponse,
+  TabAuthorizationResponse,
   TransactionStatus,
 } from "@/lib/tabs/types";
 
@@ -74,6 +86,7 @@ type SplitInput = {
 };
 
 const MUTABLE_TAB_STATUSES = new Set(["active", "review"]);
+const REVIEWABLE_TAB_STATUSES = new Set(["active", "review", "locked"]);
 
 function fail(code: TabErrorCode, status: number, details?: string[]): TabResult<never> {
   return { code, details, ok: false, status };
@@ -152,6 +165,26 @@ function activityDto(event: ActivityEvent): ActivityEventResponse {
     eventType: event.eventType,
     id: event.id,
     tabId: event.tabId,
+  };
+}
+
+function authorizationDto(authorization: TabAuthorization): TabAuthorizationResponse {
+  return {
+    allowanceTxHash: authorization.allowanceTxHash,
+    authorizationMethod: authorization.authorizationMethod,
+    capBaseUnits: authorization.capBaseUnits.toString(),
+    createdAt: toIso(authorization.createdAt),
+    expiresAt: toIso(authorization.expiresAt),
+    id: authorization.id,
+    maxSingleSettlementBaseUnits: authorization.maxSingleSettlementBaseUnits.toString(),
+    memberId: authorization.memberId,
+    revokedAt: authorization.revokedAt ? toIso(authorization.revokedAt) : null,
+    sessionKeyRef: authorization.sessionKeyRef,
+    settlementContractAddress: authorization.settlementContractAddress,
+    tabId: authorization.tabId,
+    tokenAddress: authorization.tokenAddress,
+    updatedAt: toIso(authorization.updatedAt),
+    walletAddress: authorization.walletAddress,
   };
 }
 
@@ -411,7 +444,12 @@ export async function getTabDetail(input: {
         db
           .select()
           .from(settlementProposals)
-          .where(eq(settlementProposals.tabId, tabId))
+          .where(
+            and(
+              eq(settlementProposals.tabId, tabId),
+              inArray(settlementProposals.status, ["open", "locked"]),
+            ),
+          )
           .orderBy(desc(settlementProposals.createdAt))
           .limit(1),
         db.select().from(tabAuthorizations).where(eq(tabAuthorizations.tabId, tabId)),
@@ -432,12 +470,7 @@ export async function getTabDetail(input: {
         authorizations:
           access.data.currentMember?.joinStatus === "invited" && !access.data.isOwner
             ? []
-            : authorizationRows.map((authorization) => ({
-                ...authorization,
-                capBaseUnits: authorization.capBaseUnits.toString(),
-                maxSingleSettlementBaseUnits:
-                  authorization.maxSingleSettlementBaseUnits.toString(),
-              })),
+            : authorizationRows.map(authorizationDto),
         confirmations:
           access.data.currentMember?.joinStatus === "invited" && !access.data.isOwner
             ? []
@@ -450,10 +483,7 @@ export async function getTabDetail(input: {
           access.data.currentMember?.joinStatus === "invited" && !access.data.isOwner
             ? null
             : latestProposalRows[0]
-              ? {
-                  ...latestProposalRows[0],
-                  totalAmountBaseUnits: latestProposalRows[0].totalAmountBaseUnits.toString(),
-                }
+              ? proposalDto(latestProposalRows[0])
               : null,
         members: members.map(memberDto),
         splits:
@@ -1392,7 +1422,7 @@ export async function createSettlementProposal(input: {
   didToken: unknown;
   includedExpenseIds?: unknown;
   tabId: unknown;
-}) {
+}): Promise<TabResult<SettlementProposalMutationResponse>> {
   const currentUser = await getCurrentUser(input.didToken);
 
   if (!currentUser.ok) {
@@ -1426,7 +1456,30 @@ export async function createSettlementProposal(input: {
 
   try {
     const db = getDb();
-    const tabExpenses = await db.select().from(expenses).where(eq(expenses.tabId, tabId));
+    const [activeProposal] = await db
+      .select()
+      .from(settlementProposals)
+      .where(
+        and(
+          eq(settlementProposals.tabId, tabId),
+          inArray(settlementProposals.status, ["open", "locked"]),
+        ),
+      )
+      .limit(1);
+
+    if (activeProposal) {
+      return fail("invalid_transition", 409);
+    }
+
+    const [tabExpenses, members, splitRows] = await Promise.all([
+      db.select().from(expenses).where(eq(expenses.tabId, tabId)),
+      db.select().from(tabMembers).where(eq(tabMembers.tabId, tabId)),
+      db
+        .select()
+        .from(expenseSplits)
+        .innerJoin(expenses, eq(expenseSplits.expenseId, expenses.id))
+        .where(eq(expenses.tabId, tabId)),
+    ]);
     const requestedSet = new Set(requestedIds);
     const included =
       requestedSet.size > 0
@@ -1455,7 +1508,391 @@ export async function createSettlementProposal(input: {
       return fail("proposal_not_ready", 409);
     }
 
-    return fail("settlement_engine_unavailable", 501);
+    const settlement = calculateSettlement(
+      createSettlementInputsFromTabDetail({
+        expenses: tabExpenses.map(expenseDto),
+        members: members.map(memberDto),
+        splits: splitRows.map((row) => splitDto(row.expense_splits)),
+        tokenAddress: access.data.tab.tokenAddress,
+      }),
+    );
+
+    if (!settlement.ok) {
+      return fail("settlement_engine_unavailable", 409, [settlement.error.message]);
+    }
+
+    const includedIds = included.map((expense) => expense.id).sort();
+    const excludedIds = tabExpenses
+      .filter((expense) => !includedIds.includes(expense.id))
+      .map((expense) => expense.id)
+      .sort();
+
+    if (
+      settlement.result.eligibleExpenseIds.length !== includedIds.length ||
+      settlement.result.eligibleExpenseIds.some((id, index) => id !== includedIds[index])
+    ) {
+      return fail("proposal_not_ready", 409);
+    }
+
+    if (
+      settlement.result.transfers.length === 0 ||
+      BigInt(settlement.result.totalMovingBaseUnits) === BigInt(0)
+    ) {
+      return fail("proposal_not_ready", 409, ["Everyone is even, so there is nothing to settle."]);
+    }
+
+    const payload = buildProposalHashPayload({
+      excludedExpenseIds: excludedIds,
+      includedExpenseIds: includedIds,
+      networkChainId: access.data.tab.networkChainId,
+      settlement: settlement.result,
+      tabId,
+      tokenAddress: access.data.tab.tokenAddress,
+    });
+    const proposalHash = hashProposalPayload(payload);
+    const expiresAt = new Date(
+      Date.now() + access.data.tab.defaultExpiryHours * 60 * 60 * 1000,
+    );
+
+    const result = await db.transaction(async (tx) => {
+      const [proposal] = await tx
+        .insert(settlementProposals)
+        .values({
+          createdByUserId: currentUser.data.user.id,
+          excludedExpenseIds: excludedIds,
+          expiresAt,
+          includedExpenseIds: includedIds,
+          netBalancesJson: settlement.result.balances,
+          proposalHash,
+          status: "open",
+          tabId,
+          totalAmountBaseUnits: BigInt(settlement.result.totalMovingBaseUnits),
+          transfersJson: settlement.result.transfers,
+        })
+        .returning();
+
+      const [activity] = await tx
+        .insert(activityEvents)
+        .values({
+          actorUserId: currentUser.data.user.id,
+          eventData: {
+            includedCount: includedIds.length,
+            proposalId: proposal.id,
+            proposalHash,
+            totalAmountBaseUnits: settlement.result.totalMovingBaseUnits,
+            transferCount: settlement.result.transfers.length,
+          },
+          eventType: "proposal_created",
+          tabId,
+        })
+        .returning();
+
+      await tx
+        .update(tabs)
+        .set({ status: "review", updatedAt: new Date() })
+        .where(eq(tabs.id, tabId));
+
+      return { activity, proposal };
+    });
+
+    return {
+      data: { activity: activityDto(result.activity), proposal: proposalDto(result.proposal) },
+      ok: true,
+    };
+  } catch {
+    return fail("database_unavailable", 503);
+  }
+}
+
+export async function lockSettlementProposal(input: {
+  didToken: unknown;
+  proposalId: unknown;
+}): Promise<TabResult<SettlementProposalMutationResponse>> {
+  const currentUser = await getCurrentUser(input.didToken);
+
+  if (!currentUser.ok) {
+    return currentUser;
+  }
+
+  if (!isUuid(input.proposalId)) {
+    return fail("validation_failed", 422);
+  }
+
+  try {
+    const db = getDb();
+    const [proposal] = await db
+      .select()
+      .from(settlementProposals)
+      .where(eq(settlementProposals.id, input.proposalId));
+
+    if (!proposal) {
+      return fail("not_found", 404);
+    }
+
+    const access = await getAccessContext(proposal.tabId, currentUser.data.user.id);
+
+    if (!access.ok) {
+      return access;
+    }
+
+    if (!access.data.currentMember || access.data.currentMember.joinStatus !== "joined") {
+      return fail("unauthorized", 403);
+    }
+
+    if (proposal.status === "locked") {
+      return { data: { proposal: proposalDto(proposal) }, ok: true };
+    }
+
+    if (proposal.status !== "open") {
+      return fail("invalid_transition", 409);
+    }
+
+    if (proposal.expiresAt.getTime() <= Date.now()) {
+      return fail("stale_record", 409, [
+        "This proposal expired. Create a fresh proposal before settlement.",
+      ]);
+    }
+
+    if (!REVIEWABLE_TAB_STATUSES.has(access.data.tab.status)) {
+      return fail("invalid_transition", 409);
+    }
+
+    const [tabExpenses, members, splitRows] = await Promise.all([
+      db.select().from(expenses).where(eq(expenses.tabId, proposal.tabId)),
+      db.select().from(tabMembers).where(eq(tabMembers.tabId, proposal.tabId)),
+      db
+        .select()
+        .from(expenseSplits)
+        .innerJoin(expenses, eq(expenseSplits.expenseId, expenses.id))
+        .where(eq(expenses.tabId, proposal.tabId)),
+    ]);
+    const includedSet = new Set(proposal.includedExpenseIds);
+    const includedExpenses = tabExpenses.filter((expense) => includedSet.has(expense.id));
+
+    if (
+      includedExpenses.length !== proposal.includedExpenseIds.length ||
+      includedExpenses.some((expense) => expense.status !== "confirmed")
+    ) {
+      return fail("stale_record", 409, [
+        "This proposal is out of date. Cancel it and create a fresh one before settlement.",
+      ]);
+    }
+
+    const settlement = calculateSettlement(
+      createSettlementInputsFromTabDetail({
+        expenses: tabExpenses.map(expenseDto),
+        members: members.map(memberDto),
+        splits: splitRows.map((row) => splitDto(row.expense_splits)),
+        tokenAddress: access.data.tab.tokenAddress,
+      }),
+    );
+
+    if (!settlement.ok) {
+      return fail("settlement_engine_unavailable", 409, [settlement.error.message]);
+    }
+
+    const currentPayload = buildProposalHashPayload({
+      excludedExpenseIds: tabExpenses
+        .filter((expense) => !includedSet.has(expense.id))
+        .map((expense) => expense.id),
+      includedExpenseIds: proposal.includedExpenseIds,
+      networkChainId: access.data.tab.networkChainId,
+      settlement: settlement.result,
+      tabId: proposal.tabId,
+      tokenAddress: access.data.tab.tokenAddress,
+    });
+
+    if (hashProposalPayload(currentPayload) !== proposal.proposalHash) {
+      return fail("stale_record", 409, [
+        "This proposal is out of date. Cancel it and create a fresh one before settlement.",
+      ]);
+    }
+
+    const memberById = new Map(members.map((member) => [member.id, member]));
+    const missingTransferMember = settlement.result.transfers.some((transfer) => {
+      const debtor = memberById.get(transfer.fromMemberId);
+      const creditor = memberById.get(transfer.toMemberId);
+
+      return !debtor?.walletAddress || !creditor?.walletAddress;
+    });
+
+    if (missingTransferMember) {
+      return fail("proposal_not_ready", 409, [
+        "A member in this settlement needs attention before you can continue.",
+      ]);
+    }
+
+    const result = await db.transaction(async (tx) => {
+      const [lockedProposal] = await tx
+        .update(settlementProposals)
+        .set({ status: "locked", updatedAt: new Date() })
+        .where(and(eq(settlementProposals.id, proposal.id), eq(settlementProposals.status, "open")))
+        .returning();
+
+      if (!lockedProposal) {
+        tx.rollback();
+      }
+
+      const lockedExpenses = await tx
+        .update(expenses)
+        .set({ status: "locked", updatedAt: new Date() })
+        .where(
+          and(
+            eq(expenses.tabId, proposal.tabId),
+            eq(expenses.status, "confirmed"),
+            inArray(expenses.id, proposal.includedExpenseIds),
+          ),
+        )
+        .returning();
+
+      if (lockedExpenses.length !== proposal.includedExpenseIds.length) {
+        tx.rollback();
+      }
+
+      await tx
+        .update(tabs)
+        .set({ status: "locked", updatedAt: new Date() })
+        .where(eq(tabs.id, proposal.tabId));
+
+      const [activity] = await tx
+        .insert(activityEvents)
+        .values({
+          actorUserId: currentUser.data.user.id,
+          eventData: {
+            proposalId: proposal.id,
+            proposalHash: proposal.proposalHash,
+          },
+          eventType: "proposal_locked",
+          tabId: proposal.tabId,
+        })
+        .returning();
+
+      return { activity, proposal: lockedProposal };
+    });
+
+    return {
+      data: { activity: activityDto(result.activity), proposal: proposalDto(result.proposal) },
+      ok: true,
+    };
+  } catch {
+    return fail("database_unavailable", 503);
+  }
+}
+
+export async function cancelSettlementProposal(input: {
+  didToken: unknown;
+  proposalId: unknown;
+}): Promise<TabResult<SettlementProposalMutationResponse>> {
+  const currentUser = await getCurrentUser(input.didToken);
+
+  if (!currentUser.ok) {
+    return currentUser;
+  }
+
+  if (!isUuid(input.proposalId)) {
+    return fail("validation_failed", 422);
+  }
+
+  try {
+    const db = getDb();
+    const [proposal] = await db
+      .select()
+      .from(settlementProposals)
+      .where(eq(settlementProposals.id, input.proposalId));
+
+    if (!proposal) {
+      return fail("not_found", 404);
+    }
+
+    const access = await getAccessContext(proposal.tabId, currentUser.data.user.id);
+
+    if (!access.ok) {
+      return access;
+    }
+
+    if (!access.data.currentMember || access.data.currentMember.joinStatus !== "joined") {
+      return fail("unauthorized", 403);
+    }
+
+    if (proposal.status === "cancelled") {
+      return { data: { proposal: proposalDto(proposal) }, ok: true };
+    }
+
+    if (proposal.status !== "open" && proposal.status !== "locked") {
+      return fail("invalid_transition", 409);
+    }
+
+    if (access.data.tab.status === "settling" || access.data.tab.status === "settled") {
+      return fail("invalid_transition", 409);
+    }
+
+    const [settlementTransaction] = await db
+      .select()
+      .from(settlementTransactions)
+      .where(eq(settlementTransactions.proposalId, proposal.id))
+      .limit(1);
+
+    if (
+      settlementTransaction?.status === "confirmed" ||
+      settlementTransaction?.status === "submitted"
+    ) {
+      return fail("invalid_transition", 409);
+    }
+
+    const result = await db.transaction(async (tx) => {
+      const [cancelledProposal] = await tx
+        .update(settlementProposals)
+        .set({ status: "cancelled", updatedAt: new Date() })
+        .where(
+          and(
+            eq(settlementProposals.id, proposal.id),
+            inArray(settlementProposals.status, ["open", "locked"]),
+          ),
+        )
+        .returning();
+
+      if (!cancelledProposal) {
+        tx.rollback();
+      }
+
+      if (proposal.status === "locked" && proposal.includedExpenseIds.length > 0) {
+        await tx
+          .update(expenses)
+          .set({ status: "confirmed", updatedAt: new Date() })
+          .where(
+            and(
+              eq(expenses.tabId, proposal.tabId),
+              eq(expenses.status, "locked"),
+              inArray(expenses.id, proposal.includedExpenseIds),
+            ),
+          );
+      }
+
+      await tx
+        .update(tabs)
+        .set({ status: "review", updatedAt: new Date() })
+        .where(eq(tabs.id, proposal.tabId));
+
+      const [activity] = await tx
+        .insert(activityEvents)
+        .values({
+          actorUserId: currentUser.data.user.id,
+          eventData: {
+            proposalId: proposal.id,
+            proposalHash: proposal.proposalHash,
+          },
+          eventType: "proposal_cancelled",
+          tabId: proposal.tabId,
+        })
+        .returning();
+
+      return { activity, proposal: cancelledProposal };
+    });
+
+    return {
+      data: { activity: activityDto(result.activity), proposal: proposalDto(result.proposal) },
+      ok: true,
+    };
   } catch {
     return fail("database_unavailable", 503);
   }
