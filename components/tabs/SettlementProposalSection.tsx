@@ -15,6 +15,7 @@ import {
 } from "@/components/tabs/proposalUtils";
 import { SettlementProposalSummaryCard } from "@/components/tabs/SettlementProposalSummaryCard";
 import { SettlementTransferList } from "@/components/tabs/SettlementTransferList";
+import { SettlementAuthorizationSection } from "@/components/tabs/SettlementAuthorizationSection";
 import { useNowMs } from "@/components/tabs/useNowMs";
 import { usePrefersReducedMotion } from "@/components/tabs/usePrefersReducedMotion";
 import { Button } from "@/components/ui/Button";
@@ -31,20 +32,25 @@ import {
   calculateSettlement,
   createSettlementInputsFromTabDetail,
 } from "@/lib/tabs/settlement";
+import type { Account } from "@/lib/account/types";
 import type { TabDetailResponse, TabMemberResponse } from "@/lib/tabs/types";
 
 type SettlementProposalSectionProps = {
+  account: Account | null;
   currentMember: TabMemberResponse | null;
   detail: TabDetailResponse;
   getDidToken: () => Promise<string | null>;
   onRefetch: () => Promise<void> | void;
+  requestWallet: <T = unknown>(payload: { method: string; params?: unknown[] }) => Promise<T>;
 };
 
 export function SettlementProposalSection({
+  account,
   currentMember,
   detail,
   getDidToken,
   onRefetch,
+  requestWallet,
 }: SettlementProposalSectionProps) {
   const reducedMotion = usePrefersReducedMotion();
   const [cancelOpen, setCancelOpen] = useState(false);
@@ -197,6 +203,14 @@ export function SettlementProposalSection({
                   onLock={() => void runAction("lock")}
                   onRefresh={onRefetch}
                 />
+                <SettlementAuthorizationSection
+                  account={account}
+                  currentMember={currentMember}
+                  detail={detail}
+                  getDidToken={getDidToken}
+                  requestWallet={requestWallet}
+                  onRefetch={onRefetch}
+                />
                 <ProposalBlockerPanel blockers={blockers} reducedMotion={reducedMotion} />
                 {!isMutableTab(detail.tab.status) ? (
                   <p className="text-sm leading-6 text-muted">
@@ -212,6 +226,14 @@ export function SettlementProposalSection({
                   nowMs={nowMs}
                   proposal={proposal}
                   reducedMotion={reducedMotion}
+                />
+                <SettlementAuthorizationSection
+                  account={account}
+                  currentMember={currentMember}
+                  detail={detail}
+                  getDidToken={getDidToken}
+                  requestWallet={requestWallet}
+                  onRefetch={onRefetch}
                 />
                 {expired ? (
                   <div className="rounded-md border border-outline-variant bg-secondary-soft px-4 py-3 text-sm leading-6 text-secondary">
