@@ -4,6 +4,7 @@ import type {
   ExpenseConfirmationResponse,
   ExpenseResponse,
   ExpenseSplitResponse,
+  SettlementProposalMutationResponse,
   TabDetailResponse,
   TabErrorCode,
   TabMemberResponse,
@@ -49,6 +50,8 @@ export type RemoveExpenseResponse = {
   activity: ActivityEventResponse;
   expenseId: string;
 };
+
+export type ProposalMutationResponse = SettlementProposalMutationResponse;
 
 function isTabErrorCode(value: unknown): value is TabErrorCode {
   return (
@@ -112,7 +115,7 @@ async function requestTaby<T>(path: string, didToken: string, init?: RequestInit
     throw {
       code,
       details,
-      message: tabErrorMessage(code),
+      message: details?.[0] ?? tabErrorMessage(code),
     } satisfies TabClientError;
   }
 
@@ -228,4 +231,29 @@ export function removeExpenseRequest(didToken: string, expenseId: string) {
   return requestTaby<RemoveExpenseResponse>(`/api/expenses/${expenseId}`, didToken, {
     method: "DELETE",
   });
+}
+
+export function createProposalRequest(didToken: string, tabId: string) {
+  return requestTaby<ProposalMutationResponse>(`/api/tabs/${tabId}/proposals`, didToken, {
+    body: JSON.stringify({}),
+    method: "POST",
+  });
+}
+
+export function lockProposalRequest(didToken: string, proposalId: string) {
+  return requestTaby<ProposalMutationResponse>(`/api/proposals/${proposalId}/lock`, didToken, {
+    body: JSON.stringify({}),
+    method: "POST",
+  });
+}
+
+export function cancelProposalRequest(didToken: string, proposalId: string) {
+  return requestTaby<ProposalMutationResponse>(
+    `/api/proposals/${proposalId}/cancel`,
+    didToken,
+    {
+      body: JSON.stringify({}),
+      method: "POST",
+    },
+  );
 }
