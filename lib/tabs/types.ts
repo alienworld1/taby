@@ -1,3 +1,5 @@
+import type { MemberNetBalance, SettlementTransfer } from "./settlement";
+
 export type TabErrorCode =
   | "unauthenticated"
   | "unauthorized"
@@ -45,6 +47,31 @@ export type MemberJoinStatus = "invited" | "joined" | "removed";
 export type ConfirmationStatus = "pending" | "confirmed" | "disputed";
 export type AuthorizationMethod = "erc20_allowance" | "zerodev_session_key";
 export type TransactionStatus = "submitted" | "confirmed" | "failed";
+export type SettlementProposalStatus =
+  | "draft"
+  | "open"
+  | "locked"
+  | "cancelled"
+  | "executed"
+  | "failed";
+
+export type TabAuthorizationResponse = {
+  allowanceTxHash: string | null;
+  authorizationMethod: AuthorizationMethod;
+  capBaseUnits: string;
+  createdAt: string;
+  expiresAt: string;
+  id: string;
+  maxSingleSettlementBaseUnits: string;
+  memberId: string;
+  revokedAt: string | null;
+  sessionKeyRef: string | null;
+  settlementContractAddress: string;
+  tabId: string;
+  tokenAddress: string;
+  updatedAt: string;
+  walletAddress: string;
+};
 
 export type ActivityEventResponse = {
   actorUserId: string | null;
@@ -106,6 +133,29 @@ export type ExpenseResponse = {
   tokenAddress: string;
 };
 
+export type SettlementProposalResponse = {
+  createdAt: string;
+  createdByUserId: string;
+  debtorAmountsBaseUnits: Record<string, string>;
+  executedAt: string | null;
+  excludedExpenseIds: string[];
+  expiresAt: string;
+  id: string;
+  includedExpenseIds: string[];
+  netBalances: MemberNetBalance[];
+  proposalHash: string;
+  status: SettlementProposalStatus;
+  tabId: string;
+  totalAmountBaseUnits: string;
+  transfers: SettlementTransfer[];
+  updatedAt: string;
+};
+
+export type SettlementProposalMutationResponse = {
+  activity?: ActivityEventResponse;
+  proposal: SettlementProposalResponse;
+};
+
 export type TabSummaryResponse = {
   currentMember: TabMemberResponse | null;
   memberCount: number;
@@ -115,9 +165,9 @@ export type TabSummaryResponse = {
 
 export type TabDetailResponse = {
   activity: ActivityEventResponse[];
-  authorizations: unknown[];
+  authorizations: TabAuthorizationResponse[];
   expenses: ExpenseResponse[];
-  latestProposal: unknown | null;
+  latestProposal: SettlementProposalResponse | null;
   members: TabMemberResponse[];
   splits: ExpenseSplitResponse[];
   confirmations: ExpenseConfirmationResponse[];
