@@ -5,6 +5,7 @@ import {
   FiCheckCircle,
   FiClock,
   FiDollarSign,
+  FiLock,
   FiTrash2,
   FiUsers,
 } from "react-icons/fi";
@@ -41,6 +42,7 @@ function statusCopy(status: ExpenseView["expense"]["status"]) {
     case "pending":
       return "Needs review";
     case "locked":
+      return "Locked";
     case "settled":
       return "Read-only";
     default:
@@ -181,6 +183,15 @@ export function ExpenseDetailSheet({
             </div>
           ) : null}
 
+          {expense.expense.status === "locked" ? (
+            <div className="flex items-start gap-3 rounded-md border border-primary-fixed bg-primary-soft p-4 text-primary-strong">
+              <FiLock aria-hidden="true" className="mt-0.5 shrink-0" />
+              <p className="text-sm leading-6">
+                This expense is locked in a settlement proposal. Cancel the proposal to edit it.
+              </p>
+            </div>
+          ) : null}
+
           {canConfirm ? (
             <div className="grid gap-3 sm:grid-cols-2">
               <Button
@@ -224,6 +235,10 @@ export function ExpenseDetailSheet({
                 Remove expense
               </Button>
             </div>
+          ) : expense.expense.status === "locked" ? (
+            <p className="border-t border-outline-variant pt-4 text-sm leading-6 text-muted">
+              This expense is locked in a settlement proposal. Cancel the proposal to edit it.
+            </p>
           ) : null}
         </div>
       ) : null}

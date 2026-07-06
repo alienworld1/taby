@@ -1,5 +1,8 @@
+"use client";
+
 import { FiArrowRight } from "react-icons/fi";
 import { motion } from "motion/react";
+import { usePrefersReducedMotion } from "@/components/tabs/usePrefersReducedMotion";
 import { formatUsdc } from "@/lib/tabs/money";
 import type { SettlementTransfer } from "@/lib/tabs/settlement";
 import type { TabMemberResponse } from "@/lib/tabs/types";
@@ -10,6 +13,8 @@ type SettlementTransferListProps = {
 };
 
 export function SettlementTransferList({ membersById, transfers }: SettlementTransferListProps) {
+  const reducedMotion = usePrefersReducedMotion();
+
   if (transfers.length === 0) {
     return null;
   }
@@ -26,9 +31,10 @@ export function SettlementTransferList({ membersById, transfers }: SettlementTra
             <motion.div
               key={transfer.id}
               className="grid gap-2 px-4 py-3 sm:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)_auto] sm:items-center"
-              initial={{ opacity: 0, y: 6 }}
+              initial={reducedMotion ? false : { opacity: 0, y: 6 }}
               layout
               animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: reducedMotion ? 0 : 0.18 }}
             >
               <span className="min-w-0 break-words text-sm font-medium text-debtor">
                 {debtorName} pays

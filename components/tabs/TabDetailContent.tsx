@@ -10,6 +10,7 @@ import { InviteAcceptancePanel } from "@/components/tabs/InviteAcceptancePanel";
 import { InviteMemberSheet } from "@/components/tabs/InviteMemberSheet";
 import { MemberPanel } from "@/components/tabs/MemberPanel";
 import { SettlementSummary } from "@/components/tabs/SettlementSummary";
+import { SettlementProposalSection } from "@/components/tabs/SettlementProposalSection";
 import { SetupProgressStrip } from "@/components/tabs/SetupProgressStrip";
 import { TabHeader } from "@/components/tabs/TabHeader";
 import { Button } from "@/components/ui/Button";
@@ -285,6 +286,12 @@ export function TabDetailContent({ tabId }: TabDetailContentProps) {
           onRefetch={loadDetail}
         />
         <SettlementSummary detail={detail} onRefresh={loadDetail} />
+        <SettlementProposalSection
+          currentMember={currentMember ?? null}
+          detail={detail}
+          getDidToken={getDidToken}
+          onRefetch={loadDetail}
+        />
       </motion.div>
 
       <InviteMemberSheet

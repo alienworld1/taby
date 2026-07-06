@@ -21,7 +21,9 @@ export function ExpenseCard({ expense, onOpen }: ExpenseCardProps) {
         ? "Excluded"
         : status === "pending"
           ? "Needs review"
-          : "Read-only";
+          : status === "locked"
+            ? "Locked"
+            : "Read-only";
   const statusTone =
     status === "confirmed" ? "success" : status === "disputed" ? "error" : "neutral";
   const StatusIcon =
