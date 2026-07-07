@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { and, desc, eq, inArray, ne, sql } from "drizzle-orm";
 import { Magic } from "@magic-sdk/admin";
 import { normalizeEmail } from "@/lib/account/validation";
@@ -55,6 +56,11 @@ import type {
   ExpenseResponse,
   ExpenseSplitResponse,
   SettlementProposalMutationResponse,
+  SettlementPreviewAuthorizationSummary,
+  SettlementPreviewBlocker,
+  SettlementPreviewResponse,
+  SettlementPreviewSnapshot,
+  SettlementPreviewThresholdResult,
   TabDetailResponse,
   TabErrorCode,
   TabMemberResponse,
@@ -87,6 +93,9 @@ type SplitInput = {
 
 const MUTABLE_TAB_STATUSES = new Set(["active", "review"]);
 const REVIEWABLE_TAB_STATUSES = new Set(["active", "review", "locked"]);
+const SETTLEMENT_PREVIEW_COUNTDOWN_SECONDS = 5;
+const LOW_RISK_SETTLEMENT_MAX_BASE_UNITS = BigInt(10000000);
+const CAP_USAGE_THRESHOLD_PERCENT = 50;
 
 function fail(code: TabErrorCode, status: number, details?: string[]): TabResult<never> {
   return { code, details, ok: false, status };
@@ -186,6 +195,93 @@ function authorizationDto(authorization: TabAuthorization): TabAuthorizationResp
     tokenAddress: authorization.tokenAddress,
     updatedAt: toIso(authorization.updatedAt),
     walletAddress: authorization.walletAddress,
+  };
+}
+
+function previewBlocker(input: {
+  expenseId?: string | null;
+  id: string;
+  kind: SettlementPreviewBlocker["kind"];
+  memberId?: string | null;
+  message: string;
+  severity?: SettlementPreviewBlocker["severity"];
+}): SettlementPreviewBlocker {
+  return {
+    expenseId: input.expenseId ?? null,
+    id: input.id,
+    kind: input.kind,
+    memberId: input.memberId ?? null,
+    message: input.message,
+    severity: input.severity ?? "blocking",
+  };
+}
+
+function latestAuthorizationForMember(
+  authorizations: TabAuthorization[],
+  memberId: string,
+  tokenAddress: string,
+  settlementContractAddress: string,
+) {
+  return authorizations
+    .filter(
+      (authorization) =>
+        authorization.memberId === memberId &&
+        authorization.tokenAddress.toLowerCase() === tokenAddress.toLowerCase() &&
+        authorization.settlementContractAddress.toLowerCase() ===
+          settlementContractAddress.toLowerCase(),
+    )
+    .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())[0];
+}
+
+function buildSnapshotHash(input: Omit<SettlementPreviewSnapshot, "snapshotHash">) {
+  return createHash("sha256").update(JSON.stringify(input)).digest("hex");
+}
+
+function deriveThresholdResult(input: {
+  authorizationSummaries: SettlementPreviewAuthorizationSummary[];
+  currentMemberId: string;
+  totalAmountBaseUnits: string;
+}): SettlementPreviewThresholdResult {
+  const total = BigInt(input.totalAmountBaseUnits);
+  const currentSummary = input.authorizationSummaries.find(
+    (summary) => summary.memberId === input.currentMemberId,
+  );
+  const summariesToCheck = currentSummary ? [currentSummary] : input.authorizationSummaries;
+  const capHeavy = summariesToCheck.some((summary) => {
+    if (!summary.capBaseUnits || BigInt(summary.capBaseUnits) === BigInt(0)) {
+      return false;
+    }
+
+    return BigInt(summary.owedBaseUnits) * BigInt(100) >
+      BigInt(summary.capBaseUnits) * BigInt(CAP_USAGE_THRESHOLD_PERCENT);
+  });
+
+  if (total > LOW_RISK_SETTLEMENT_MAX_BASE_UNITS) {
+    return {
+      capUsageThresholdPercent: CAP_USAGE_THRESHOLD_PERCENT,
+      explicitConfirmationAmountBaseUnits: LOW_RISK_SETTLEMENT_MAX_BASE_UNITS.toString(),
+      lowRiskMaxBaseUnits: LOW_RISK_SETTLEMENT_MAX_BASE_UNITS.toString(),
+      reason: "amount_over_threshold",
+      requiresExplicitConfirmation: true,
+    };
+  }
+
+  if (capHeavy) {
+    return {
+      capUsageThresholdPercent: CAP_USAGE_THRESHOLD_PERCENT,
+      explicitConfirmationAmountBaseUnits: LOW_RISK_SETTLEMENT_MAX_BASE_UNITS.toString(),
+      lowRiskMaxBaseUnits: LOW_RISK_SETTLEMENT_MAX_BASE_UNITS.toString(),
+      reason: currentSummary ? "cap_usage_over_threshold" : "group_debtor_over_threshold",
+      requiresExplicitConfirmation: true,
+    };
+  }
+
+  return {
+    capUsageThresholdPercent: CAP_USAGE_THRESHOLD_PERCENT,
+    explicitConfirmationAmountBaseUnits: LOW_RISK_SETTLEMENT_MAX_BASE_UNITS.toString(),
+    lowRiskMaxBaseUnits: LOW_RISK_SETTLEMENT_MAX_BASE_UNITS.toString(),
+    reason: "low_risk",
+    requiresExplicitConfirmation: false,
   };
 }
 
@@ -2029,6 +2125,480 @@ export async function cancelSettlementProposal(input: {
 
     return {
       data: { activity: activityDto(result.activity), proposal: proposalDto(result.proposal) },
+      ok: true,
+    };
+  } catch {
+    return fail("database_unavailable", 503);
+  }
+}
+
+export async function previewSettlementProposal(input: {
+  didToken: unknown;
+  expectedProposalHash?: unknown;
+  expectedSnapshotHash?: unknown;
+  phase?: unknown;
+  proposalId: unknown;
+}): Promise<TabResult<SettlementPreviewResponse>> {
+  const currentUser = await getCurrentUser(input.didToken);
+
+  if (!currentUser.ok) {
+    return currentUser;
+  }
+
+  if (!isUuid(input.proposalId)) {
+    return fail("validation_failed", 422);
+  }
+
+  const phase =
+    input.phase === "countdown" || input.phase === "final_precheck" ? input.phase : "open";
+  const expectedProposalHash =
+    typeof input.expectedProposalHash === "string" ? input.expectedProposalHash : null;
+  const expectedSnapshotHash =
+    typeof input.expectedSnapshotHash === "string" ? input.expectedSnapshotHash : null;
+
+  try {
+    const db = getDb();
+    const [proposalRow] = await db
+      .select()
+      .from(settlementProposals)
+      .where(eq(settlementProposals.id, input.proposalId));
+
+    if (!proposalRow) {
+      return fail("not_found", 404);
+    }
+
+    const access = await getAccessContext(proposalRow.tabId, currentUser.data.user.id);
+
+    if (!access.ok) {
+      return access;
+    }
+
+    if (!access.data.currentMember || access.data.currentMember.joinStatus !== "joined") {
+      return fail("unauthorized", 403);
+    }
+
+    const [
+      members,
+      tabExpenses,
+      splitRows,
+      authorizationRows,
+    ] = await Promise.all([
+      db.select().from(tabMembers).where(eq(tabMembers.tabId, proposalRow.tabId)),
+      db.select().from(expenses).where(eq(expenses.tabId, proposalRow.tabId)),
+      db
+        .select()
+        .from(expenseSplits)
+        .innerJoin(expenses, eq(expenseSplits.expenseId, expenses.id))
+        .where(eq(expenses.tabId, proposalRow.tabId)),
+      db.select().from(tabAuthorizations).where(eq(tabAuthorizations.tabId, proposalRow.tabId)),
+    ]);
+    const proposal = proposalDto(proposalRow);
+    const tab = access.data.tab;
+    const memberById = new Map(members.map((member) => [member.id, member]));
+    const includedSet = new Set(proposal.includedExpenseIds);
+    const settlementContractAddress = normalizeEvmAddress(getSettlementContractAddress());
+    const blockers: SettlementPreviewBlocker[] = [];
+    const nowMs = Date.now();
+
+    if (proposal.status !== "locked") {
+      blockers.push(
+        previewBlocker({
+          id: "proposal-not-locked",
+          kind: "tab_not_ready",
+          message: "Lock the proposal before previewing settlement.",
+        }),
+      );
+    }
+
+    if (proposal.expiresAt && new Date(proposal.expiresAt).getTime() <= nowMs) {
+      blockers.push(
+        previewBlocker({
+          id: "proposal-expired",
+          kind: "expired_proposal",
+          message: "This proposal expired. Create a fresh proposal before settling.",
+        }),
+      );
+    }
+
+    if (expectedProposalHash && expectedProposalHash !== proposal.proposalHash) {
+      blockers.push(
+        previewBlocker({
+          id: "proposal-hash-changed",
+          kind: "stale_proposal",
+          message: "Something changed. Refresh the preview before settling.",
+        }),
+      );
+    }
+
+    if (tab.status === "settling" || tab.status === "settled" || tab.status === "cancelled") {
+      blockers.push(
+        previewBlocker({
+          id: "tab-not-ready",
+          kind: "tab_not_ready",
+          message: "This tab is not ready for settlement preview.",
+        }),
+      );
+    }
+
+    if (tab.networkChainId !== TABY_CHAIN_ID) {
+      blockers.push(
+        previewBlocker({
+          id: "chain-mismatch",
+          kind: "configuration_missing",
+          message: "Settlement is configured for Arbitrum Sepolia.",
+        }),
+      );
+    }
+
+    if (tab.tokenAddress.toLowerCase() !== TABY_USDC_ADDRESS.toLowerCase()) {
+      blockers.push(
+        previewBlocker({
+          id: "token-mismatch",
+          kind: "token_mismatch",
+          message: "Settlement is configured for USDC only.",
+        }),
+      );
+    }
+
+    if (!settlementContractAddress) {
+      blockers.push(
+        previewBlocker({
+          id: "contract-missing",
+          kind: "contract_missing",
+          message: "Settlement is not configured yet.",
+        }),
+      );
+    }
+
+    const includedExpenses = tabExpenses.filter((expense) => includedSet.has(expense.id));
+
+    if (includedExpenses.length !== proposal.includedExpenseIds.length) {
+      blockers.push(
+        previewBlocker({
+          id: "included-expense-missing",
+          kind: "changed_expense",
+          message: "Something changed. Refresh the preview before settling.",
+        }),
+      );
+    }
+
+    for (const expense of includedExpenses) {
+      if (expense.status !== "locked" && expense.status !== "confirmed") {
+        blockers.push(
+          previewBlocker({
+            expenseId: expense.id,
+            id: `expense-${expense.id}`,
+            kind: "changed_expense",
+            message: `${expense.title} changed. Refresh the preview before settling.`,
+          }),
+        );
+      }
+    }
+
+    const normalizedExpenses = tabExpenses.map((expense) =>
+      includedSet.has(expense.id) && expense.status === "locked"
+        ? { ...expenseDto(expense), status: "confirmed" as const }
+        : expenseDto(expense),
+    );
+    const settlement = calculateSettlement(
+      createSettlementInputsFromTabDetail({
+        expenses: normalizedExpenses,
+        members: members.map(memberDto),
+        splits: splitRows.map((row) => splitDto(row.expense_splits)),
+        tokenAddress: tab.tokenAddress,
+      }),
+    );
+
+    if (!settlement.ok) {
+      blockers.push(
+        previewBlocker({
+          expenseId: settlement.error.expenseId,
+          id: `settlement-${settlement.error.code}`,
+          kind:
+            settlement.error.code === "token_mismatch"
+              ? "token_mismatch"
+              : settlement.error.memberId
+                ? "changed_member"
+                : "changed_expense",
+          memberId: settlement.error.memberId,
+          message: "Something changed. Refresh the preview before settling.",
+        }),
+      );
+    } else {
+      const currentPayload = buildProposalHashPayload({
+        excludedExpenseIds: tabExpenses
+          .filter((expense) => !includedSet.has(expense.id))
+          .map((expense) => expense.id),
+        includedExpenseIds: proposal.includedExpenseIds,
+        networkChainId: tab.networkChainId,
+        settlement: settlement.result,
+        tabId: proposal.tabId,
+        tokenAddress: tab.tokenAddress,
+      });
+
+      if (hashProposalPayload(currentPayload) !== proposal.proposalHash) {
+        blockers.push(
+          previewBlocker({
+            id: "proposal-stale",
+            kind: "stale_proposal",
+            message: "Something changed. Refresh the preview before settling.",
+          }),
+        );
+      }
+    }
+
+    if (proposal.transfers.length === 0 || BigInt(proposal.totalAmountBaseUnits) === BigInt(0)) {
+      blockers.push(
+        previewBlocker({
+          id: "zero-transfers",
+          kind: "tab_not_ready",
+          message: "Everyone is even, so there is nothing to settle.",
+          severity: "info",
+        }),
+      );
+    }
+
+    const debtorAmounts = new Map<string, bigint>();
+
+    for (const transfer of proposal.transfers) {
+      if (BigInt(transfer.amountBaseUnits) <= BigInt(0)) {
+        blockers.push(
+          previewBlocker({
+            id: `transfer-${transfer.id}`,
+            kind: "stale_proposal",
+            message: "Something changed. Refresh the preview before settling.",
+          }),
+        );
+      }
+
+      const debtor = memberById.get(transfer.fromMemberId);
+      const creditor = memberById.get(transfer.toMemberId);
+
+      if (!debtor || debtor.joinStatus !== "joined") {
+        blockers.push(
+          previewBlocker({
+            id: `debtor-${transfer.fromMemberId}`,
+            kind: "unknown_member",
+            memberId: transfer.fromMemberId,
+            message: "A member changed. Refresh the preview before settling.",
+          }),
+        );
+      }
+
+      if (!creditor || creditor.joinStatus !== "joined") {
+        blockers.push(
+          previewBlocker({
+            id: `creditor-${transfer.toMemberId}`,
+            kind: "unknown_member",
+            memberId: transfer.toMemberId,
+            message: "A member changed. Refresh the preview before settling.",
+          }),
+        );
+      }
+
+      if (debtor && !debtor.walletAddress) {
+        blockers.push(
+          previewBlocker({
+            id: `debtor-wallet-${debtor.id}`,
+            kind: "missing_wallet",
+            memberId: debtor.id,
+            message: `${debtor.displayName} needs a wallet before settlement can continue.`,
+          }),
+        );
+      }
+
+      if (creditor && !creditor.walletAddress) {
+        blockers.push(
+          previewBlocker({
+            id: `creditor-wallet-${creditor.id}`,
+            kind: "missing_wallet",
+            memberId: creditor.id,
+            message: `${creditor.displayName} needs a wallet before settlement can continue.`,
+          }),
+        );
+      }
+
+      debtorAmounts.set(
+        transfer.fromMemberId,
+        (debtorAmounts.get(transfer.fromMemberId) ?? BigInt(0)) +
+          BigInt(transfer.amountBaseUnits),
+      );
+    }
+
+    const authorizationSummaries: SettlementPreviewAuthorizationSummary[] = [];
+
+    for (const [memberId, owed] of debtorAmounts) {
+      const member = memberById.get(memberId);
+      const authorization = settlementContractAddress
+        ? latestAuthorizationForMember(
+            authorizationRows,
+            memberId,
+            TABY_USDC_ADDRESS,
+            settlementContractAddress,
+          )
+        : undefined;
+      let status: SettlementPreviewAuthorizationSummary["status"] = "ready";
+
+      if (!member?.walletAddress) {
+        status = "missing_wallet";
+      } else if (!authorization) {
+        status = "missing";
+      } else if (authorization.revokedAt) {
+        status = "revoked";
+      } else if (authorization.expiresAt.getTime() <= nowMs) {
+        status = "expired";
+      } else if (authorization.capBaseUnits < owed) {
+        status = "insufficient_cap";
+      }
+
+      authorizationSummaries.push({
+        authorizationId: authorization?.id ?? null,
+        capBaseUnits: authorization?.capBaseUnits.toString() ?? null,
+        displayName: member?.displayName ?? "A member",
+        expiresAt: authorization?.expiresAt.toISOString() ?? null,
+        memberId,
+        owedBaseUnits: owed.toString(),
+        revokedAt: authorization?.revokedAt?.toISOString() ?? null,
+        status,
+        walletAddress: member?.walletAddress ?? null,
+      });
+
+      if (status === "missing") {
+        blockers.push(
+          previewBlocker({
+            id: `authorization-${memberId}`,
+            kind: "missing_authorization",
+            memberId,
+            message: `${member?.displayName ?? "A member"} still needs to authorize their share.`,
+            severity: "warning",
+          }),
+        );
+      } else if (status === "revoked") {
+        blockers.push(
+          previewBlocker({
+            id: `authorization-revoked-${memberId}`,
+            kind: "revoked_authorization",
+            memberId,
+            message: `${member?.displayName ?? "A member"} needs to authorize again before settlement can continue.`,
+            severity: "warning",
+          }),
+        );
+      } else if (status === "expired") {
+        blockers.push(
+          previewBlocker({
+            id: `authorization-expired-${memberId}`,
+            kind: "expired_authorization",
+            memberId,
+            message: `${member?.displayName ?? "A member"} needs to authorize again because their permission expired.`,
+            severity: "warning",
+          }),
+        );
+      } else if (status === "insufficient_cap") {
+        blockers.push(
+          previewBlocker({
+            id: `authorization-insufficient-${memberId}`,
+            kind: "insufficient_authorization",
+            memberId,
+            message: `${member?.displayName ?? "A member"} needs a cap that covers their share.`,
+            severity: "warning",
+          }),
+        );
+      }
+    }
+
+    const currentMemberId = access.data.currentMember.id;
+    const currentPays = proposal.transfers
+      .filter((transfer) => transfer.fromMemberId === currentMemberId)
+      .reduce((total, transfer) => total + BigInt(transfer.amountBaseUnits), BigInt(0));
+    const currentReceives = proposal.transfers
+      .filter((transfer) => transfer.toMemberId === currentMemberId)
+      .reduce((total, transfer) => total + BigInt(transfer.amountBaseUnits), BigInt(0));
+    const currentAuthorization = authorizationSummaries.find(
+      (summary) => summary.memberId === currentMemberId,
+    );
+    const currentMemberOutcome = {
+      amountBaseUnits:
+        currentPays > BigInt(0)
+          ? currentPays.toString()
+          : currentReceives > BigInt(0)
+            ? currentReceives.toString()
+            : "0",
+      capBaseUnits: currentAuthorization?.capBaseUnits ?? null,
+      direction:
+        currentPays > BigInt(0) ? "pays" : currentReceives > BigInt(0) ? "receives" : "settled",
+      expiresAt: currentAuthorization?.expiresAt ?? null,
+      memberId: currentMemberId,
+    } satisfies SettlementPreviewSnapshot["currentMemberOutcome"];
+
+    let snapshot: SettlementPreviewSnapshot | null = null;
+    let thresholdResult: SettlementPreviewThresholdResult | null = null;
+
+    if (proposal.status === "locked" && settlementContractAddress) {
+      const snapshotWithoutHash = {
+        authorizationSummaries: authorizationSummaries.sort((a, b) =>
+          a.memberId.localeCompare(b.memberId),
+        ),
+        currentMemberOutcome,
+        excludedExpenseCount: proposal.excludedExpenseIds.length,
+        excludedExpenseIds: proposal.excludedExpenseIds,
+        includedExpenseCount: proposal.includedExpenseIds.length,
+        includedExpenseIds: proposal.includedExpenseIds,
+        netBalances: proposal.netBalances,
+        networkChainId: tab.networkChainId,
+        networkName: "Arbitrum Sepolia",
+        proposalExpiresAt: proposal.expiresAt,
+        proposalHash: proposal.proposalHash,
+        proposalId: proposal.id,
+        proposalStatus: "locked" as const,
+        proposalUpdatedAt: proposal.updatedAt,
+        settlementContractAddress,
+        tabId: tab.id,
+        tabTitle: tab.title,
+        tokenAddress: TABY_USDC_ADDRESS,
+        totalAmountBaseUnits: proposal.totalAmountBaseUnits,
+        transfers: proposal.transfers,
+      };
+
+      snapshot = {
+        ...snapshotWithoutHash,
+        snapshotHash: buildSnapshotHash(snapshotWithoutHash),
+      };
+      thresholdResult = deriveThresholdResult({
+        authorizationSummaries,
+        currentMemberId,
+        totalAmountBaseUnits: proposal.totalAmountBaseUnits,
+      });
+
+      if (
+        (phase === "countdown" || phase === "final_precheck") &&
+        expectedSnapshotHash &&
+        expectedSnapshotHash !== snapshot.snapshotHash
+      ) {
+        blockers.push(
+          previewBlocker({
+            id: "snapshot-changed",
+            kind: "stale_proposal",
+            message: "Something changed. Refresh the preview before settling.",
+          }),
+        );
+      }
+    }
+
+    const dedupedBlockers = blockers.filter(
+      (blocker, index, all) => all.findIndex((item) => item.id === blocker.id) === index,
+    );
+    const hasIssue = dedupedBlockers.length > 0;
+
+    return {
+      data: {
+        blockers: dedupedBlockers,
+        canStartCountdown: Boolean(snapshot) && !hasIssue,
+        canStartExecution:
+          phase === "final_precheck" && Boolean(snapshot) && !hasIssue,
+        countdownSeconds: SETTLEMENT_PREVIEW_COUNTDOWN_SECONDS,
+        snapshot,
+        thresholdResult,
+      },
       ok: true,
     };
   } catch {
