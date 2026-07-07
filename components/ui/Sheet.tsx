@@ -2,11 +2,13 @@
 
 import { useId, type ReactNode } from "react";
 import { FiX } from "react-icons/fi";
+import { cn } from "@/lib/cn";
 
 type SheetProps = {
   children: ReactNode;
   description?: string;
   open: boolean;
+  panelClassName?: string;
   title: string;
   onOpenChange: (open: boolean) => void;
 };
@@ -15,6 +17,7 @@ export function Sheet({
   children,
   description,
   open,
+  panelClassName,
   title,
   onOpenChange,
 }: SheetProps) {
@@ -33,7 +36,12 @@ export function Sheet({
       className="fixed inset-0 z-40 grid items-end bg-inverse-surface/25 p-3 backdrop-blur-md sm:items-center sm:p-6"
       role="dialog"
     >
-      <div className="mx-auto w-full max-w-lg rounded-2xl border border-outline-variant bg-surface-container-lowest p-5 shadow-soft">
+      <div
+        className={cn(
+          "mx-auto w-full max-w-lg rounded-2xl border border-outline-variant bg-surface-container-lowest p-5 shadow-soft",
+          panelClassName,
+        )}
+      >
         <div className="relative min-h-10 pr-12">
           <div className="min-w-0">
             <h2 className="break-words text-xl font-semibold leading-7" id={titleId}>
