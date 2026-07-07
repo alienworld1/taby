@@ -18,9 +18,14 @@ import type { TabDetailResponse } from "@/lib/tabs/types";
 type SettlementGraphSectionProps = {
   detail: TabDetailResponse;
   settlement: SettlementEngineResult;
+  settlementPreviewActive?: boolean;
 };
 
-export function SettlementGraphSection({ detail, settlement }: SettlementGraphSectionProps) {
+export function SettlementGraphSection({
+  detail,
+  settlement,
+  settlementPreviewActive = false,
+}: SettlementGraphSectionProps) {
   const reducedMotion = usePrefersReducedMotion();
   const graphResult = useMemo(
     () => buildSettlementGraphData(detail, settlement),
@@ -106,6 +111,7 @@ export function SettlementGraphSection({ detail, settlement }: SettlementGraphSe
             mode={mode}
             reducedMotion={reducedMotion}
             selectedElementId={selectedElementId}
+            settlementPreviewActive={settlementPreviewActive}
             onSelectedElementChange={setSelectedElementId}
           />
         ) : null}

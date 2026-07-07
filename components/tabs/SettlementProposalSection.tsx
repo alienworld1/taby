@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { FiFileText, FiRefreshCcw } from "react-icons/fi";
+import { FiFileText, FiRefreshCcw, FiZap } from "react-icons/fi";
 import { motion } from "motion/react";
 import { CancelProposalSheet } from "@/components/tabs/CancelProposalSheet";
 import { ProposalActionPanel } from "@/components/tabs/ProposalActionPanel";
@@ -16,6 +16,7 @@ import {
 import { SettlementProposalSummaryCard } from "@/components/tabs/SettlementProposalSummaryCard";
 import { SettlementTransferList } from "@/components/tabs/SettlementTransferList";
 import { SettlementAuthorizationSection } from "@/components/tabs/SettlementAuthorizationSection";
+import { SettlementPreviewSheet } from "@/components/tabs/SettlementPreviewSheet";
 import { useNowMs } from "@/components/tabs/useNowMs";
 import { usePrefersReducedMotion } from "@/components/tabs/usePrefersReducedMotion";
 import { Button } from "@/components/ui/Button";
@@ -28,6 +29,7 @@ import {
   toTabClientError,
   type TabClientError,
 } from "@/lib/tabs/client";
+import { TABY_CHAIN_ID, TABY_USDC_ADDRESS } from "@/lib/tabs/constants";
 import {
   calculateSettlement,
   createSettlementInputsFromTabDetail,
@@ -40,6 +42,7 @@ type SettlementProposalSectionProps = {
   currentMember: TabMemberResponse | null;
   detail: TabDetailResponse;
   getDidToken: () => Promise<string | null>;
+  onCountdownActiveChange?: (active: boolean) => void;
   onRefetch: () => Promise<void> | void;
   requestWallet: <T = unknown>(payload: { method: string; params?: unknown[] }) => Promise<T>;
 };
@@ -49,6 +52,7 @@ export function SettlementProposalSection({
   currentMember,
   detail,
   getDidToken,
+  onCountdownActiveChange,
   onRefetch,
   requestWallet,
 }: SettlementProposalSectionProps) {
@@ -58,6 +62,7 @@ export function SettlementProposalSection({
   const [loadingAction, setLoadingAction] = useState<"create" | "lock" | "cancel" | null>(
     null,
   );
+  const [previewOpen, setPreviewOpen] = useState(false);
   const nowMs = useNowMs();
   const proposal = detail.latestProposal;
   const membersById = useMemo(
@@ -98,6 +103,20 @@ export function SettlementProposalSection({
     return detail.expenses.filter((expense) => excludedIds.has(expense.id));
   }, [detail.expenses, proposal?.excludedExpenseIds]);
   const expired = isExpired(proposal, nowMs);
+  const settlementPreviewBlocker = blockers.find((blocker) => blocker.blocksFutureSettlement);
+  const settlementConfigBlocker =
+    !detail.tab.settlementContractAddress
+      ? "Settlement is not configured yet."
+      : detail.tab.networkChainId !== TABY_CHAIN_ID
+        ? "Settlement is configured for Arbitrum Sepolia."
+        : detail.tab.tokenAddress.toLowerCase() !== TABY_USDC_ADDRESS.toLowerCase()
+          ? "Settlement is configured for USDC only."
+          : null;
+  const canOpenSettlementPreview =
+    proposal?.status === "locked" &&
+    !expired &&
+    !settlementPreviewBlocker &&
+    !settlementConfigBlocker;
 
   async function requireDidToken() {
     const didToken = await getDidToken();
@@ -235,6 +254,41 @@ export function SettlementProposalSection({
                   requestWallet={requestWallet}
                   onRefetch={onRefetch}
                 />
+                {proposal.status === "locked" ? (
+                  <div className="grid gap-3 rounded-md border border-outline-variant bg-surface-container-low p-4">
+                    <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center">
+                      <div className="min-w-0">
+                        <h3 className="text-base font-semibold text-foreground">
+                          Preview settlement
+                        </h3>
+                        <p className="mt-1 text-sm leading-6 text-muted">
+                          Review the final transfers and cancel window before settlement starts.
+                        </p>
+                      </div>
+                      <Button
+                        className="w-full sm:w-auto"
+                        disabled={!canOpenSettlementPreview}
+                        icon={<FiZap aria-hidden="true" />}
+                        onClick={() => setPreviewOpen(true)}
+                      >
+                        Settle tab
+                      </Button>
+                    </div>
+                    {!canOpenSettlementPreview ? (
+                      <p className="text-sm leading-6 text-muted">
+                        {expired
+                          ? "This proposal expired. Create a fresh proposal before settling."
+                          : settlementConfigBlocker ??
+                            settlementPreviewBlocker?.message ??
+                            "Lock the proposal before previewing settlement."}
+                      </p>
+                    ) : null}
+                  </div>
+                ) : proposal.status === "open" ? (
+                  <p className="rounded-md border border-outline-variant bg-surface-container-low px-4 py-3 text-sm leading-6 text-muted">
+                    Lock the proposal before previewing settlement.
+                  </p>
+                ) : null}
                 {expired ? (
                   <div className="rounded-md border border-outline-variant bg-secondary-soft px-4 py-3 text-sm leading-6 text-secondary">
                     This proposal expired. Cancel it and create a fresh one before settlement.
@@ -288,6 +342,18 @@ export function SettlementProposalSection({
         }}
         onSubmit={() => void runAction("cancel")}
       />
+      {proposal?.status === "locked" ? (
+        <SettlementPreviewSheet
+          getDidToken={getDidToken}
+          membersById={membersById}
+          open={previewOpen}
+          proposalHash={proposal.proposalHash}
+          proposalId={proposal.id}
+          onCountdownActiveChange={onCountdownActiveChange}
+          onOpenChange={setPreviewOpen}
+          onRefetch={onRefetch}
+        />
+      ) : null}
     </section>
   );
 }

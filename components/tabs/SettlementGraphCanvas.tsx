@@ -26,6 +26,7 @@ type SettlementGraphCanvasProps = {
   mode: SettlementGraphMode;
   reducedMotion: boolean;
   selectedElementId: string | null;
+  settlementPreviewActive?: boolean;
   onSelectedElementChange: (id: string | null) => void;
 };
 
@@ -48,6 +49,7 @@ export function SettlementGraphCanvas({
   onSelectedElementChange,
   reducedMotion,
   selectedElementId,
+  settlementPreviewActive = false,
 }: SettlementGraphCanvasProps) {
   const activeEdges = mode === "before" ? data.beforeEdges : data.afterEdges;
   const relatedMemberIds = useMemo(
@@ -79,6 +81,7 @@ export function SettlementGraphCanvas({
             selectedElementId === edge.id ||
             selectedElementId === edge.fromMemberId ||
             selectedElementId === edge.toMemberId,
+          settlementPreviewActive,
           reducedMotion,
         },
         deletable: false,
@@ -94,7 +97,7 @@ export function SettlementGraphCanvas({
         target: edge.toMemberId,
         type: "settlementTransfer",
       })) satisfies SettlementTransferFlowEdge[],
-    [activeEdges, reducedMotion, selectedElementId],
+    [activeEdges, reducedMotion, selectedElementId, settlementPreviewActive],
   );
 
   return (

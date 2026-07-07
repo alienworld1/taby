@@ -19,10 +19,15 @@ import type { TabDetailResponse } from "@/lib/tabs/types";
 
 type SettlementSummaryProps = {
   detail: TabDetailResponse;
+  settlementPreviewActive?: boolean;
   onRefresh: () => void;
 };
 
-export function SettlementSummary({ detail, onRefresh }: SettlementSummaryProps) {
+export function SettlementSummary({
+  detail,
+  settlementPreviewActive = false,
+  onRefresh,
+}: SettlementSummaryProps) {
   const settlement = useMemo(
     () =>
       calculateSettlement(
@@ -106,6 +111,7 @@ export function SettlementSummary({ detail, onRefresh }: SettlementSummaryProps)
           <SettlementGraphSection
             key={graphKey}
             detail={detail}
+            settlementPreviewActive={settlementPreviewActive}
             settlement={result}
           />
 

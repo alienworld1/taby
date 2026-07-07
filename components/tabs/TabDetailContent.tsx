@@ -45,6 +45,7 @@ export function TabDetailContent({ tabId }: TabDetailContentProps) {
   const [detail, setDetail] = useState<TabDetailResponse | null>(null);
   const [fetchError, setFetchError] = useState<TabClientError | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+  const [settlementPreviewActive, setSettlementPreviewActive] = useState(false);
 
   const loadDetail = useCallback(async () => {
     if (status !== "signedIn") {
@@ -285,12 +286,17 @@ export function TabDetailContent({ tabId }: TabDetailContentProps) {
           onDetailChange={setDetail}
           onRefetch={loadDetail}
         />
-        <SettlementSummary detail={detail} onRefresh={loadDetail} />
+        <SettlementSummary
+          detail={detail}
+          settlementPreviewActive={settlementPreviewActive}
+          onRefresh={loadDetail}
+        />
         <SettlementProposalSection
           account={account}
           currentMember={currentMember ?? null}
           detail={detail}
           getDidToken={getDidToken}
+          onCountdownActiveChange={setSettlementPreviewActive}
           onRefetch={loadDetail}
           requestWallet={requestWallet}
         />

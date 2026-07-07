@@ -13,6 +13,7 @@ import type { SettlementGraphEdge } from "@/lib/tabs/settlementGraph";
 export type SettlementTransferEdgeData = SettlementGraphEdge & {
   highlighted: boolean;
   reducedMotion: boolean;
+  settlementPreviewActive: boolean;
 } & Record<string, unknown>;
 
 export type SettlementTransferFlowEdge = Edge<SettlementTransferEdgeData, "settlementTransfer">;
@@ -53,6 +54,9 @@ export function SettlementTransferEdge({
         className={cn(
           "transition-opacity",
           data?.mode === "after" && !data.reducedMotion ? "settlement-flow-edge" : "",
+          data?.mode === "after" && data.settlementPreviewActive && !data.reducedMotion
+            ? "settlement-preview-edge-pulse"
+            : "",
         )}
         interactionWidth={18}
         markerEnd={markerEnd}
