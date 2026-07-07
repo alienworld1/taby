@@ -152,6 +152,97 @@ export type SettlementProposalResponse = {
   updatedAt: string;
 };
 
+export type SettlementPreviewOutcome = {
+  amountBaseUnits: string;
+  capBaseUnits: string | null;
+  direction: "pays" | "receives" | "settled";
+  expiresAt: string | null;
+  memberId: string;
+};
+
+export type SettlementPreviewAuthorizationSummary = {
+  authorizationId: string | null;
+  capBaseUnits: string | null;
+  displayName: string;
+  expiresAt: string | null;
+  memberId: string;
+  owedBaseUnits: string;
+  revokedAt: string | null;
+  status: "ready" | "missing" | "expired" | "revoked" | "insufficient_cap" | "missing_wallet";
+  walletAddress: string | null;
+};
+
+export type SettlementPreviewBlocker = {
+  expenseId?: string | null;
+  id: string;
+  kind:
+    | "stale_proposal"
+    | "expired_proposal"
+    | "missing_authorization"
+    | "expired_authorization"
+    | "revoked_authorization"
+    | "insufficient_authorization"
+    | "missing_wallet"
+    | "unknown_member"
+    | "changed_expense"
+    | "changed_member"
+    | "token_mismatch"
+    | "contract_missing"
+    | "tab_not_ready"
+    | "configuration_missing"
+    | "unauthenticated"
+    | "unauthorized"
+    | "database_unavailable";
+  memberId?: string | null;
+  message: string;
+  severity: "info" | "warning" | "blocking";
+};
+
+export type SettlementPreviewThresholdResult = {
+  capUsageThresholdPercent: number;
+  explicitConfirmationAmountBaseUnits: string;
+  lowRiskMaxBaseUnits: string;
+  reason:
+    | "low_risk"
+    | "amount_over_threshold"
+    | "cap_usage_over_threshold"
+    | "group_debtor_over_threshold";
+  requiresExplicitConfirmation: boolean;
+};
+
+export type SettlementPreviewSnapshot = {
+  authorizationSummaries: SettlementPreviewAuthorizationSummary[];
+  currentMemberOutcome: SettlementPreviewOutcome;
+  excludedExpenseCount: number;
+  excludedExpenseIds: string[];
+  includedExpenseCount: number;
+  includedExpenseIds: string[];
+  netBalances: MemberNetBalance[];
+  networkChainId: number;
+  networkName: string;
+  proposalExpiresAt: string;
+  proposalHash: string;
+  proposalId: string;
+  proposalStatus: "locked";
+  proposalUpdatedAt: string;
+  settlementContractAddress: string;
+  snapshotHash: string;
+  tabId: string;
+  tabTitle: string;
+  tokenAddress: string;
+  totalAmountBaseUnits: string;
+  transfers: SettlementTransfer[];
+};
+
+export type SettlementPreviewResponse = {
+  blockers: SettlementPreviewBlocker[];
+  canStartCountdown: boolean;
+  canStartExecution: boolean;
+  countdownSeconds: number;
+  snapshot: SettlementPreviewSnapshot | null;
+  thresholdResult: SettlementPreviewThresholdResult | null;
+};
+
 export type SettlementProposalMutationResponse = {
   activity?: ActivityEventResponse;
   proposal: SettlementProposalResponse;
