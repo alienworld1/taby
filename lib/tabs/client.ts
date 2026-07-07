@@ -5,6 +5,7 @@ import type {
   ExpenseResponse,
   ExpenseSplitResponse,
   SettlementProposalMutationResponse,
+  SettlementPreviewResponse,
   TabAuthorizationResponse,
   TabDetailResponse,
   TabErrorCode,
@@ -57,6 +58,12 @@ export type ProposalMutationResponse = SettlementProposalMutationResponse;
 export type AuthorizationMutationResponse = {
   activity: ActivityEventResponse;
   authorization: TabAuthorizationResponse;
+};
+
+export type SettlementPreviewRequestInput = {
+  expectedProposalHash?: string;
+  expectedSnapshotHash?: string;
+  phase?: "open" | "countdown" | "final_precheck";
 };
 
 function isTabErrorCode(value: unknown): value is TabErrorCode {
@@ -262,6 +269,17 @@ export function cancelProposalRequest(didToken: string, proposalId: string) {
       method: "POST",
     },
   );
+}
+
+export function previewProposalRequest(
+  didToken: string,
+  proposalId: string,
+  input: SettlementPreviewRequestInput = {},
+) {
+  return requestTaby<SettlementPreviewResponse>(`/api/proposals/${proposalId}/preview`, didToken, {
+    body: JSON.stringify(input),
+    method: "POST",
+  });
 }
 
 export function recordAuthorizationRequest(
