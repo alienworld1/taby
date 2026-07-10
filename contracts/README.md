@@ -4,9 +4,10 @@ Foundry workspace for the Taby settlement layer.
 
 ## Primary Contract
 
-- `src/TabySettlement.sol` settles locked Taby proposals by moving Arbitrum Sepolia USDC with `transferFrom`.
-- The contract verifies a trusted proposal-authorizer signature over the exact settlement call before using debtor allowances.
-- The MVP deployment is recorded in `deployments/arbitrum-sepolia.json`.
+- `src/TabySettlement.sol` is the v2 onchain enforcement layer for a locked Final Tab.
+- The contract records one active proposal per coordinator-scoped tab key, permanent cancellation, exact debtor authorizations, revocation, and settlement replay protection.
+- Settlement recomputes the Final Tab hash and ordered transfer hash before moving Arbitrum Sepolia USDC with `transferFrom`.
+- The old trusted proposal-authorizer signature path is not part of v2.
 
 ## Network
 
@@ -48,14 +49,15 @@ Required local environment variables:
 
 - `PRIVATE_KEY`: funded Arbitrum Sepolia deployer key.
 - `ARBITRUM_SEPOLIA_RPC_URL`: Arbitrum Sepolia RPC URL.
-- `PROPOSAL_AUTHORIZER_ADDRESS`: trusted signer address for exact proposal authorization.
 
-Do not commit private keys or signer secrets.
+Do not commit private keys or RPC credentials.
 
 ### Verify Deployment
 
 ```shell
 cast code <settlement-address> --rpc-url "$ARBITRUM_SEPOLIA_RPC_URL"
 cast call <settlement-address> 'supportedToken()(address)' --rpc-url "$ARBITRUM_SEPOLIA_RPC_URL"
-cast call <settlement-address> 'proposalAuthorizer()(address)' --rpc-url "$ARBITRUM_SEPOLIA_RPC_URL"
+cast call <settlement-address> 'SUPPORTED_CHAIN_ID()(uint256)' --rpc-url "$ARBITRUM_SEPOLIA_RPC_URL"
 ```
+
+After deployment, update `deployments/arbitrum-sepolia.json` and `SETTLEMENT_CONTRACT_ADDRESS` with the deployed v2 address.
