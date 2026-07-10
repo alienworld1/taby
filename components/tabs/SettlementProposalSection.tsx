@@ -22,10 +22,14 @@ import { usePrefersReducedMotion } from "@/components/tabs/usePrefersReducedMoti
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { ErrorCallout } from "@/components/ui/ErrorCallout";
+import { createSettlementAccountClient, sendSettlementBatch } from "@/lib/account/zerodev/browser";
 import {
   cancelProposalRequest,
+  confirmCancelProposalRequest,
+  confirmLockProposalRequest,
   createProposalRequest,
-  lockProposalRequest,
+  prepareCancelProposalRequest,
+  prepareLockProposalRequest,
   toTabClientError,
   type TabClientError,
 } from "@/lib/tabs/client";
@@ -36,12 +40,14 @@ import {
 } from "@/lib/tabs/settlement";
 import type { Account } from "@/lib/account/types";
 import type { TabDetailResponse, TabMemberResponse } from "@/lib/tabs/types";
+import type { EIP1193Provider } from "viem";
 
 type SettlementProposalSectionProps = {
   account: Account | null;
   currentMember: TabMemberResponse | null;
   detail: TabDetailResponse;
   getDidToken: () => Promise<string | null>;
+  getWalletProvider: () => EIP1193Provider | null;
   onCountdownActiveChange?: (active: boolean) => void;
   onRefetch: () => Promise<void> | void;
   requestWallet: <T = unknown>(payload: { method: string; params?: unknown[] }) => Promise<T>;
@@ -52,6 +58,7 @@ export function SettlementProposalSection({
   currentMember,
   detail,
   getDidToken,
+  getWalletProvider,
   onCountdownActiveChange,
   onRefetch,
   requestWallet,
@@ -145,9 +152,100 @@ export function SettlementProposalSection({
       if (action === "create") {
         await createProposalRequest(didToken, detail.tab.id);
       } else if (action === "lock" && proposal) {
-        await lockProposalRequest(didToken, proposal.id);
+        if (!account?.settlementAccount) {
+          throw {
+            code: "account_unavailable",
+            message: "Preparing secure settlement. You will not need gas to continue.",
+          } satisfies TabClientError;
+        }
+
+        const magicProvider = getWalletProvider();
+
+        if (!magicProvider) {
+          throw {
+            code: "account_unavailable",
+            message: "Preparing secure settlement. You will not need gas to continue.",
+          } satisfies TabClientError;
+        }
+
+        const prepared = await prepareLockProposalRequest(didToken, proposal.id);
+
+        if (!Array.isArray(prepared.calls)) {
+          await onRefetch();
+          return;
+        }
+
+        const settlementClient = await createSettlementAccountClient({
+          accountType: account.settlementAccount.accountType,
+          didToken,
+          magicProvider,
+          magicWalletAddress: account.settlementAccount.magicWalletAddress,
+          publicRpcUrl: process.env.NEXT_PUBLIC_ARBITRUM_SEPOLIA_RPC_URL,
+        });
+
+        if (
+          settlementClient.settlementAddress.toLowerCase() !==
+          account.settlementAccount.settlementAddress.toLowerCase()
+        ) {
+          throw {
+            code: "account_unavailable",
+            message: "Preparing secure settlement. Refresh your settlement account and try again.",
+          } satisfies TabClientError;
+        }
+
+        const receipt = await sendSettlementBatch(settlementClient.kernelClient, prepared.calls);
+
+        await confirmLockProposalRequest(didToken, proposal.id, receipt);
       } else if (action === "cancel" && proposal) {
-        await cancelProposalRequest(didToken, proposal.id);
+        if (proposal.status === "locked" || proposal.registrationTxHash) {
+          if (!account?.settlementAccount) {
+            throw {
+              code: "account_unavailable",
+              message: "We could not cancel this Final Tab onchain. Try again before creating a fresh one.",
+            } satisfies TabClientError;
+          }
+
+          const magicProvider = getWalletProvider();
+
+          if (!magicProvider) {
+            throw {
+              code: "account_unavailable",
+              message: "We could not cancel this Final Tab onchain. Try again before creating a fresh one.",
+            } satisfies TabClientError;
+          }
+
+          const prepared = await prepareCancelProposalRequest(didToken, proposal.id);
+
+          if (!Array.isArray(prepared.calls)) {
+            await onRefetch();
+            setCancelOpen(false);
+            return;
+          }
+
+          const settlementClient = await createSettlementAccountClient({
+            accountType: account.settlementAccount.accountType,
+            didToken,
+            magicProvider,
+            magicWalletAddress: account.settlementAccount.magicWalletAddress,
+            publicRpcUrl: process.env.NEXT_PUBLIC_ARBITRUM_SEPOLIA_RPC_URL,
+          });
+
+          if (
+            settlementClient.settlementAddress.toLowerCase() !==
+            account.settlementAccount.settlementAddress.toLowerCase()
+          ) {
+            throw {
+              code: "account_unavailable",
+              message: "Preparing secure settlement. Refresh your settlement account and try again.",
+            } satisfies TabClientError;
+          }
+
+          const receipt = await sendSettlementBatch(settlementClient.kernelClient, prepared.calls);
+
+          await confirmCancelProposalRequest(didToken, proposal.id, receipt);
+        } else {
+          await cancelProposalRequest(didToken, proposal.id);
+        }
         setCancelOpen(false);
       }
 
@@ -227,6 +325,7 @@ export function SettlementProposalSection({
                   currentMember={currentMember}
                   detail={detail}
                   getDidToken={getDidToken}
+                  getWalletProvider={getWalletProvider}
                   requestWallet={requestWallet}
                   onRefetch={onRefetch}
                 />
@@ -251,6 +350,7 @@ export function SettlementProposalSection({
                   currentMember={currentMember}
                   detail={detail}
                   getDidToken={getDidToken}
+                  getWalletProvider={getWalletProvider}
                   requestWallet={requestWallet}
                   onRefetch={onRefetch}
                 />

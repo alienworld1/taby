@@ -44,7 +44,7 @@ export function AuthorizationStatusRow({ item, reducedMotion }: AuthorizationSta
         </div>
         <p className="mt-1 text-sm leading-6 text-muted">
           Owes {formatUsdc(item.owedBaseUnits)}
-          {item.capBaseUnits ? ` - Cap ${formatUsdc(item.capBaseUnits)}` : ""}
+          {item.capBaseUnits ? ` - Approved ${formatUsdc(item.capBaseUnits)}` : ""}
         </p>
       </div>
       {item.expiresAt ? (

@@ -139,11 +139,11 @@ export function getAuthorizationStatus(input: {
 
   const cap = BigInt(input.authorization.capBaseUnits);
 
-  if (cap < input.owedBaseUnits) {
+  if (cap !== input.owedBaseUnits) {
     return "insufficient_allowance";
   }
 
-  if (input.allowanceBaseUnits !== null && BigInt(input.allowanceBaseUnits) < cap) {
+  if (input.allowanceBaseUnits !== null && BigInt(input.allowanceBaseUnits) !== cap) {
     return "insufficient_allowance";
   }
 
@@ -153,17 +153,17 @@ export function getAuthorizationStatus(input: {
 export function statusMessage(status: AuthorizationStatusValue) {
   switch (status) {
     case "authorized":
-      return "Authorized";
+      return "Approved";
     case "expired":
       return "Expired";
     case "revoked":
       return "Revoked";
     case "insufficient_allowance":
-      return "Needs a higher cap";
+      return "Needs approval";
     case "checking":
-      return "Checking permission";
+      return "Checking approval";
     case "approving":
-      return "Authorizing";
+      return "Approving";
     case "wallet_unavailable":
       return "Wallet unavailable";
     case "configuration_missing":
@@ -172,7 +172,7 @@ export function statusMessage(status: AuthorizationStatusValue) {
       return "Needs refresh";
     case "not_authorized":
     default:
-      return "Needs authorization";
+      return "Needs approval";
   }
 }
 

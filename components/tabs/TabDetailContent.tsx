@@ -36,7 +36,15 @@ function isAccessError(error: TabClientError | null) {
 }
 
 export function TabDetailContent({ tabId }: TabDetailContentProps) {
-  const { account, errorCode, getDidToken, requestWallet, retryAccountSetup, status } = useAuth();
+  const {
+    account,
+    errorCode,
+    getDidToken,
+    getWalletProvider,
+    requestWallet,
+    retryAccountSetup,
+    status,
+  } = useAuth();
   const [addError, setAddError] = useState<TabClientError | null>(null);
   const [addOpen, setAddOpen] = useState(false);
   const [addSubmitting, setAddSubmitting] = useState(false);
@@ -296,6 +304,7 @@ export function TabDetailContent({ tabId }: TabDetailContentProps) {
           currentMember={currentMember ?? null}
           detail={detail}
           getDidToken={getDidToken}
+          getWalletProvider={getWalletProvider}
           onCountdownActiveChange={setSettlementPreviewActive}
           onRefetch={loadDetail}
           requestWallet={requestWallet}

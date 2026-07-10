@@ -23,6 +23,7 @@ import { Button } from "@/components/ui/Button";
 import { StatusChip } from "@/components/ui/StatusChip";
 import type { Account } from "@/lib/account/types";
 import type { TabDetailResponse, TabMemberResponse } from "@/lib/tabs/types";
+import type { EIP1193Provider } from "viem";
 
 type WalletRequest = <T = unknown>(payload: {
   method: string;
@@ -34,6 +35,7 @@ type SettlementAuthorizationSectionProps = {
   currentMember: TabMemberResponse | null;
   detail: TabDetailResponse;
   getDidToken: () => Promise<string | null>;
+  getWalletProvider: () => EIP1193Provider | null;
   onRefetch: () => Promise<void> | void;
   requestWallet: WalletRequest;
 };
@@ -43,6 +45,7 @@ export function SettlementAuthorizationSection({
   currentMember,
   detail,
   getDidToken,
+  getWalletProvider,
   onRefetch,
   requestWallet,
 }: SettlementAuthorizationSectionProps) {
@@ -72,8 +75,7 @@ export function SettlementAuthorizationSection({
     : null;
   const visibleCap = getVisibleCapBaseUnits(detail, currentOwed);
   const defaultExpiry = getDefaultExpiry(detail);
-  const normalizedAccountWallet = normalizeAddress(account?.walletAddress);
-  const normalizedMemberWallet = normalizeAddress(currentMember?.walletAddress);
+  const normalizedAccountWallet = normalizeAddress(account?.settlementAccount?.settlementAddress);
   const settlementContractAddress = normalizeAddress(detail.tab.settlementContractAddress);
   const tokenReady = isExpectedToken(detail.tab.tokenAddress);
   const settlementAccountReady =
@@ -88,7 +90,7 @@ export function SettlementAuthorizationSection({
     Boolean(currentAuthorization) &&
     !currentAuthorization?.revokedAt &&
     !authorizationExpired &&
-    BigInt(currentAuthorization?.capBaseUnits ?? "0") >= currentOwed;
+    BigInt(currentAuthorization?.capBaseUnits ?? "0") === currentOwed;
   const isDebtor = currentOwed > BigInt(0);
   const canOpenSheet =
     Boolean(lockedProposal) &&
@@ -99,14 +101,12 @@ export function SettlementAuthorizationSection({
     tokenReady &&
     settlementAccountReady &&
     !proposalExpired &&
-    Boolean(normalizedAccountWallet) &&
-    normalizedAccountWallet === normalizedMemberWallet;
+    Boolean(normalizedAccountWallet);
   const helperCopy = getHelperCopy({
     currentMember,
     isDebtor,
     lockedProposal: Boolean(lockedProposal),
     normalizedAccountWallet,
-    normalizedMemberWallet,
     authorizationExpired: Boolean(authorizationExpired),
     authorizationActive,
     authorizationRevoked: Boolean(currentAuthorization?.revokedAt),
@@ -130,17 +130,17 @@ export function SettlementAuthorizationSection({
             id="settlement-authorization-heading"
             className="text-lg font-semibold text-foreground"
           >
-            Settlement authorization
+            Final Tab approval
           </h2>
           <p className="mt-1 text-sm leading-6 text-muted">
-            Each person who owes money approves a capped amount before settlement can continue.
+            Each debtor approves only their exact share for this locked Final Tab.
           </p>
         </div>
         {readinessItems.length > 0 && readinessItems.every((item) => !item.blocksSettlement) ? (
           <StatusChip tone="success">
             <span className="inline-flex items-center gap-1.5">
               <FiCheckCircle aria-hidden="true" />
-              Authorized
+              Approved
             </span>
           </StatusChip>
         ) : (
@@ -174,7 +174,7 @@ export function SettlementAuthorizationSection({
               </div>
               {isDebtor ? (
                 <div className="text-left sm:text-right">
-                  <p className="text-sm font-semibold text-muted">Your tab cap</p>
+                  <p className="text-sm font-semibold text-muted">Maximum approved</p>
                   <p className="mt-1 text-lg font-semibold text-foreground">
                     {formatUsdc(currentAuthorization?.capBaseUnits ?? visibleCap)}
                   </p>
@@ -185,7 +185,7 @@ export function SettlementAuthorizationSection({
             {canOpenSheet ? (
               <div className="grid gap-2 sm:grid-cols-[1fr_auto] sm:items-center">
                 <p className="text-sm font-semibold leading-6 text-primary-strong">
-                  This tab can never settle more than your cap.
+                  Applies only to this Final Tab. Maximum: {formatUsdc(currentOwed)}.
                 </p>
                 <Button
                   icon={<FiShield aria-hidden="true" />}
@@ -195,8 +195,8 @@ export function SettlementAuthorizationSection({
                   !currentAuthorization.revokedAt &&
                   nowMs !== null &&
                   new Date(currentAuthorization.expiresAt).getTime() > nowMs
-                    ? "Review authorization"
-                    : "Authorize settlement"}
+                    ? "Review approval"
+                    : "Approve this Final Tab"}
                 </Button>
               </div>
             ) : (
@@ -222,16 +222,25 @@ export function SettlementAuthorizationSection({
         </div>
       )}
 
-      {canOpenSheet && currentMember && normalizedAccountWallet && settlementContractAddress ? (
+      {canOpenSheet &&
+      currentMember &&
+      lockedProposal &&
+      normalizedAccountWallet &&
+      settlementContractAddress &&
+      account?.settlementAccount ? (
         <AuthorizationSheet
+          accountType={account.settlementAccount.accountType}
           authorization={currentAuthorization}
-          capBaseUnits={visibleCap.toString()}
+          capBaseUnits={currentOwed.toString()}
           currentMember={currentMember}
           expiresAt={defaultExpiry}
           getDidToken={getDidToken}
+          getWalletProvider={getWalletProvider}
+          magicWalletAddress={account.settlementAccount.magicWalletAddress}
           maxSingleSettlementBaseUnits={currentOwed.toString()}
           open={sheetOpen}
           owedBaseUnits={currentOwed.toString()}
+          proposal={lockedProposal}
           requestWallet={requestWallet}
           settlementContractAddress={settlementContractAddress}
           tab={detail.tab}
@@ -249,7 +258,6 @@ function getHelperCopy(input: {
   isDebtor: boolean;
   lockedProposal: boolean;
   normalizedAccountWallet: string | null;
-  normalizedMemberWallet: string | null;
   authorizationActive: boolean;
   authorizationExpired: boolean;
   authorizationRevoked: boolean;
@@ -263,7 +271,7 @@ function getHelperCopy(input: {
   }
 
   if (!input.currentMember || input.currentMember.joinStatus !== "joined") {
-    return "Join this tab before authorizing settlement.";
+    return "Join this tab before approving settlement.";
   }
 
   if (!input.isDebtor) {
@@ -275,15 +283,15 @@ function getHelperCopy(input: {
   }
 
   if (input.authorizationRevoked) {
-    return "You revoked this authorization. Authorize again when you are ready.";
+    return "You revoked this approval. Approve again when you are ready.";
   }
 
   if (input.authorizationExpired) {
-    return "Your authorization expired. Authorize again to continue.";
+    return "Your approval expired. Approve again to continue.";
   }
 
   if (input.authorizationActive) {
-    return "You are authorized for this Final Tab.";
+    return "Approved for this Final Tab.";
   }
 
   if (!input.settlementContractAddress || !input.tokenReady) {
@@ -298,9 +306,5 @@ function getHelperCopy(input: {
     return "We could not load your settlement wallet. Try again in a moment.";
   }
 
-  if (input.normalizedAccountWallet !== input.normalizedMemberWallet) {
-    return "This tab is linked to a different settlement wallet.";
-  }
-
-  return "Only this tab can use this authorization.";
+  return "Only this Final Tab can use this approval.";
 }

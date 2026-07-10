@@ -6,10 +6,8 @@ import { AuthorizationDetailRows } from "@/components/tabs/AuthorizationDetailRo
 import {
   decodeUint256,
   encodeAllowanceCall,
-  encodeApproveCall,
   encodeBalanceCall,
   getAuthorizationStatus,
-  isGasError,
   isUserRejectedError,
   type AllowanceRead,
   type AuthorizationStatusValue,
@@ -20,17 +18,23 @@ import { ErrorCallout } from "@/components/ui/ErrorCallout";
 import { Sheet } from "@/components/ui/Sheet";
 import { StatusChip } from "@/components/ui/StatusChip";
 import { useNowMs } from "@/components/tabs/useNowMs";
+import { createSettlementAccountClient, sendSettlementBatch } from "@/lib/account/zerodev/browser";
 import {
+  prepareAuthorizationRequest,
+  prepareRevokeAuthorizationRequest,
   recordAuthorizationRequest,
   revokeAuthorizationRequest,
   toTabClientError,
   type TabClientError,
 } from "@/lib/tabs/client";
 import type {
+  SettlementProposalResponse,
   TabAuthorizationResponse,
   TabDetailResponse,
   TabMemberResponse,
 } from "@/lib/tabs/types";
+import type { SettlementAccountType } from "@/lib/account/types";
+import type { EIP1193Provider } from "viem";
 
 type WalletRequest = <T = unknown>(payload: {
   method: string;
@@ -38,16 +42,20 @@ type WalletRequest = <T = unknown>(payload: {
 }) => Promise<T>;
 
 type AuthorizationSheetProps = {
+  accountType: SettlementAccountType;
   authorization: TabAuthorizationResponse | null;
   capBaseUnits: string;
   currentMember: TabMemberResponse;
   expiresAt: string;
   getDidToken: () => Promise<string | null>;
+  getWalletProvider: () => EIP1193Provider | null;
+  magicWalletAddress: string;
   maxSingleSettlementBaseUnits: string;
   onOpenChange: (open: boolean) => void;
   onRefetch: () => Promise<void> | void;
   open: boolean;
   owedBaseUnits: string;
+  proposal: SettlementProposalResponse;
   requestWallet: WalletRequest;
   settlementContractAddress: string;
   tab: TabDetailResponse["tab"];
@@ -63,16 +71,20 @@ type ActionState =
   | "revoking";
 
 export function AuthorizationSheet({
+  accountType,
   authorization,
   capBaseUnits,
   currentMember,
   expiresAt,
   getDidToken,
+  getWalletProvider,
+  magicWalletAddress,
   maxSingleSettlementBaseUnits,
   onOpenChange,
   onRefetch,
   open,
   owedBaseUnits,
+  proposal,
   requestWallet,
   settlementContractAddress,
   tab,
@@ -177,60 +189,74 @@ export function AuthorizationSheet({
     return didToken;
   }
 
+  async function createZeroDevClient(didToken: string) {
+    const magicProvider = getWalletProvider();
+
+    if (!magicProvider) {
+      throw {
+        code: "account_unavailable",
+        message: "Preparing secure settlement. You will not need gas to continue.",
+      } satisfies TabClientError;
+    }
+
+    const settlementClient = await createSettlementAccountClient({
+      accountType,
+      didToken,
+      magicProvider,
+      magicWalletAddress,
+      publicRpcUrl: process.env.NEXT_PUBLIC_ARBITRUM_SEPOLIA_RPC_URL,
+    });
+
+    if (settlementClient.settlementAddress.toLowerCase() !== walletAddress.toLowerCase()) {
+      throw {
+        code: "account_unavailable",
+        message: "Preparing secure settlement. Refresh your settlement account and try again.",
+      } satisfies TabClientError;
+    }
+
+    return settlementClient;
+  }
+
   async function handleAuthorize() {
     setError(null);
     setActionState("opening_wallet");
 
-    let txHash: string;
-
     try {
-      setActionState("authorizing");
-      txHash = await requestWallet<string>({
-        method: "eth_sendTransaction",
-        params: [
-          {
-            data: encodeApproveCall(settlementContractAddress, capBaseUnits),
-            from: walletAddress,
-            to: tab.tokenAddress,
-          },
-        ],
-      });
-    } catch (caught) {
-      setError({
-        code: "database_unavailable",
-        message: isUserRejectedError(caught)
-          ? "You cancelled the wallet request. No authorization was made."
-          : isGasError(caught)
-            ? "Your wallet needs a little Arbitrum Sepolia ETH to send this transaction."
-            : "We could not reach Arbitrum Sepolia. Try again.",
-      });
-      setActionState("idle");
-      return;
-    }
-
-    try {
-      setActionState("recording");
       const didToken = await requireDidToken();
-      await recordAuthorizationRequest(didToken, tab.id, {
-        allowanceTxHash: txHash,
-        authorizationMethod: "erc20_allowance",
-        capBaseUnits,
-        expiresAt,
-        maxSingleSettlementBaseUnits,
+      const prepared = await prepareAuthorizationRequest(didToken, tab.id, {
         memberId: currentMember.id,
-        settlementContractAddress,
-        tokenAddress: tab.tokenAddress,
-        walletAddress,
+        proposalHash: proposal.proposalHash,
+        proposalId: proposal.id,
+      });
+      const settlementClient = await createZeroDevClient(didToken);
+
+      setActionState("authorizing");
+      const receipt = await sendSettlementBatch(settlementClient.kernelClient, prepared.calls);
+      setActionState("recording");
+      await recordAuthorizationRequest(didToken, tab.id, {
+        action: "confirm",
+        authorizationNonce: prepared.nonce ?? "",
+        exactAmountBaseUnits: prepared.expectedAmountBaseUnits ?? owedBaseUnits,
+        memberId: currentMember.id,
+        proposalHash: proposal.proposalHash,
+        proposalId: proposal.id,
+        transactionHash: receipt.transactionHash,
+        userOperationHash: receipt.userOperationHash,
       });
       await onRefetch();
       handleOpenChange(false);
     } catch (caught) {
-      const clientError = toTabClientError(caught);
+      const clientError = isUserRejectedError(caught)
+        ? ({
+            code: "database_unavailable",
+            message: "You cancelled the request. No approval was made.",
+          } satisfies TabClientError)
+        : toTabClientError(caught);
       setError({
         ...clientError,
         message:
           clientError.code === "database_unavailable"
-            ? "The wallet request was sent, but we could not save the authorization. Refresh status before trying again."
+            ? "Approval did not go through. Nothing changed. Try again."
             : clientError.message,
       });
     } finally {
@@ -246,24 +272,16 @@ export function AuthorizationSheet({
     setError(null);
     setActionState("revoking");
 
-    let txHash: string | null = null;
-
     try {
-      if (!allowanceRead || BigInt(allowanceRead.allowanceBaseUnits) > BigInt(0)) {
-        txHash = await requestWallet<string>({
-          method: "eth_sendTransaction",
-          params: [
-            {
-              data: encodeApproveCall(settlementContractAddress, "0"),
-              from: walletAddress,
-              to: tab.tokenAddress,
-            },
-          ],
-        });
-      }
-
       const didToken = await requireDidToken();
-      await revokeAuthorizationRequest(didToken, authorization.id, { revokeTxHash: txHash });
+      const prepared = await prepareRevokeAuthorizationRequest(didToken, authorization.id);
+      const settlementClient = await createZeroDevClient(didToken);
+      const receipt = await sendSettlementBatch(settlementClient.kernelClient, prepared.calls);
+      await revokeAuthorizationRequest(didToken, authorization.id, {
+        action: "confirm",
+        transactionHash: receipt.transactionHash,
+        userOperationHash: receipt.userOperationHash,
+      });
       setConfirmingRevoke(false);
       await onRefetch();
       handleOpenChange(false);
@@ -271,10 +289,8 @@ export function AuthorizationSheet({
       setError({
         code: "database_unavailable",
         message: isUserRejectedError(caught)
-          ? "You cancelled the wallet request. No authorization was made."
-          : isGasError(caught)
-            ? "Your wallet needs a little Arbitrum Sepolia ETH to send this transaction."
-            : "We could not revoke authorization. Try again.",
+          ? "You cancelled the request. No approval was made."
+          : "Approval did not go through. Nothing changed. Try again.",
       });
     } finally {
       setActionState("idle");
@@ -283,9 +299,9 @@ export function AuthorizationSheet({
 
   return (
     <Sheet
-      description="Review the cap, expiry, and tab scope before granting permission."
+      description="Review the amount, expiry, and Final Tab scope before approving."
       open={open}
-      title="Authorize your share"
+      title="Approve your share"
       onOpenChange={handleOpenChange}
     >
       <div className="grid gap-5">
@@ -293,7 +309,7 @@ export function AuthorizationSheet({
           <div className="flex items-start gap-3 rounded-md border border-primary-fixed bg-primary-soft px-4 py-3 text-primary-strong">
             <FiCheckCircle aria-hidden="true" className="mt-0.5 shrink-0" />
             <div>
-              <p className="text-sm font-semibold">You are authorized for this Final Tab.</p>
+              <p className="text-sm font-semibold">Approved for this Final Tab</p>
               <p className="mt-1 text-sm leading-6">
                 Your wallet needs enough USDC before settlement can finish.
               </p>
@@ -322,7 +338,7 @@ export function AuthorizationSheet({
 
         {allowanceRead ? (
           <p className="text-xs leading-5 text-muted">
-            Current wallet permission: {formatUsdc(allowanceRead.allowanceBaseUnits)}
+            Current approved amount: {formatUsdc(allowanceRead.allowanceBaseUnits)}
           </p>
         ) : (
           <StatusChip tone="pending">Checking permission</StatusChip>
@@ -346,10 +362,10 @@ export function AuthorizationSheet({
         {confirmingRevoke ? (
           <div className="grid gap-3 rounded-md border border-outline-variant bg-secondary-soft p-4">
             <p className="text-sm font-semibold text-secondary">
-              Revoke authorization for this tab?
+              Revoke approval for this Final Tab?
             </p>
             <p className="text-sm leading-6 text-secondary">
-              Settlement will pause for your share until you authorize again.
+              Settlement will pause for your share until you approve again.
             </p>
             <div className="grid gap-2 sm:grid-cols-2">
               <Button
@@ -357,14 +373,14 @@ export function AuthorizationSheet({
                 variant="danger"
                 onClick={() => void handleRevoke()}
               >
-                Revoke authorization
+                Revoke approval
               </Button>
               <Button
                 disabled={isBusy}
                 variant="secondary"
                 onClick={() => setConfirmingRevoke(false)}
               >
-                Keep authorization
+                Keep approval
               </Button>
             </div>
           </div>
@@ -376,7 +392,7 @@ export function AuthorizationSheet({
                 variant="secondary"
                 onClick={() => setConfirmingRevoke(true)}
               >
-                Revoke authorization
+                Revoke approval
               </Button>
             ) : (
               <Button
@@ -388,7 +404,7 @@ export function AuthorizationSheet({
                 }
                 onClick={() => void handleAuthorize()}
               >
-                {actionState === "recording" ? "Recording authorization" : "Authorize settlement"}
+                {actionState === "recording" ? "Recording approval" : "Approve this Final Tab"}
               </Button>
             )}
             <Button

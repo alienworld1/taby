@@ -34,9 +34,9 @@ export function AuthorizationDetailRows({
   return (
     <div className="grid gap-3">
       <AuthorizationDetailRow label="You owe" value={formatUsdc(owedBaseUnits)} strong />
-      <AuthorizationDetailRow label="Your tab cap" value={formatUsdc(capBaseUnits)} strong />
+      <AuthorizationDetailRow label="Maximum approved" value={formatUsdc(capBaseUnits)} strong />
       <AuthorizationDetailRow
-        label="Max for this settlement"
+        label="Exact share"
         value={formatUsdc(maxSingleSettlementBaseUnits)}
       />
       <AuthorizationDetailRow
@@ -55,7 +55,7 @@ export function AuthorizationDetailRows({
         value={tabTitle}
       />
       <p className="rounded-md border border-primary-fixed bg-primary-soft px-3 py-2 text-sm font-semibold leading-6 text-primary-strong">
-        This tab can never settle more than your cap.
+        Only this Final Tab can use this approval.
       </p>
       <details className="rounded-md border border-outline-variant bg-surface-container-low px-3 py-2">
         <summary className="cursor-pointer text-sm font-semibold text-muted">
@@ -69,7 +69,7 @@ export function AuthorizationDetailRows({
           />
           <AuthorizationTechRow label="Chain id" value={String(TABY_CHAIN_ID)} />
           {txHash ? (
-            <AuthorizationTechRow label="Authorization tx" value={shortHash(txHash)} />
+            <AuthorizationTechRow label="Approval tx" value={shortHash(txHash)} />
           ) : null}
         </div>
       </details>
