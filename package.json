@@ -12,6 +12,8 @@
   "dependencies": {
     "@magic-sdk/admin": "^2.8.2",
     "@xyflow/react": "^12.11.1",
+    "@zerodev/ecdsa-validator": "^5.4.9",
+    "@zerodev/sdk": "^5.5.10",
     "drizzle-orm": "^0.45.2",
     "magic-sdk": "^33.9.0",
     "motion": "^12.42.2",
