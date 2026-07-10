@@ -30,11 +30,8 @@ import {
   type TabMember,
   type User,
 } from "@/lib/db/schema";
-import {
-  buildProposalHashPayload,
-  hashProposalPayload,
-  proposalDto,
-} from "@/lib/tabs/proposals";
+import { proposalDto } from "@/lib/tabs/proposals";
+import { buildFinalTab } from "@/lib/tabs/finalTab";
 import {
   calculateSettlement,
   createSettlementInputsFromTabDetail,
@@ -1690,19 +1687,18 @@ export async function createSettlementProposal(input: {
 
   try {
     const db = getDb();
-    const [activeProposal] = await db
-      .select()
-      .from(settlementProposals)
-      .where(
-        and(
-          eq(settlementProposals.tabId, tabId),
-          inArray(settlementProposals.status, ["open", "locked"]),
-        ),
-      )
-      .limit(1);
+    const settlementContractAddress = normalizeEvmAddress(getSettlementContractAddress());
 
-    if (activeProposal) {
-      return fail("invalid_transition", 409);
+    if (!settlementContractAddress) {
+      return fail("configuration_missing", 503, ["Settlement is not configured yet."]);
+    }
+
+    if (access.data.tab.networkChainId !== TABY_CHAIN_ID) {
+      return fail("configuration_missing", 409, ["Settlement is configured for Arbitrum Sepolia."]);
+    }
+
+    if (access.data.tab.tokenAddress.toLowerCase() !== TABY_USDC_ADDRESS.toLowerCase()) {
+      return fail("configuration_missing", 409, ["Settlement is configured for USDC only."]);
     }
 
     const [tabExpenses, members, splitRows] = await Promise.all([
@@ -1742,9 +1738,24 @@ export async function createSettlementProposal(input: {
       return fail("proposal_not_ready", 409);
     }
 
+    const activeProposalRows = await db
+      .select()
+      .from(settlementProposals)
+      .where(
+        and(
+          eq(settlementProposals.tabId, tabId),
+          inArray(settlementProposals.status, ["open", "locked"]),
+        ),
+      )
+      .limit(1);
+
+    if (activeProposalRows[0]) {
+      return fail("invalid_transition", 409, ["This tab already has an active Final Tab."]);
+    }
+
     const settlement = calculateSettlement(
       createSettlementInputsFromTabDetail({
-        expenses: tabExpenses.map(expenseDto),
+        expenses: included.map(expenseDto),
         members: members.map(memberDto),
         splits: splitRows.map((row) => splitDto(row.expense_splits)),
         tokenAddress: access.data.tab.tokenAddress,
@@ -1775,32 +1786,98 @@ export async function createSettlementProposal(input: {
       return fail("proposal_not_ready", 409, ["Everyone is even, so there is nothing to settle."]);
     }
 
-    const payload = buildProposalHashPayload({
-      excludedExpenseIds: excludedIds,
-      includedExpenseIds: includedIds,
-      networkChainId: access.data.tab.networkChainId,
-      settlement: settlement.result,
-      tabId,
-      tokenAddress: access.data.tab.tokenAddress,
-    });
-    const proposalHash = hashProposalPayload(payload);
     const expiresAt = new Date(
       Date.now() + access.data.tab.defaultExpiryHours * 60 * 60 * 1000,
     );
+    const coordinator = members.find(
+      (member) =>
+        member.userId === access.data.tab.ownerUserId ||
+        (member.role === "owner" && member.joinStatus === "joined"),
+    );
+
+    if (!coordinator?.walletAddress) {
+      return fail("proposal_not_ready", 409, [
+        "A member in this Final Tab needs a settlement wallet before you can continue.",
+      ]);
+    }
+    const coordinatorWalletAddress = coordinator.walletAddress;
+
+    const memberById = new Map(members.map((member) => [member.id, member]));
+    const missingTransferWallet = settlement.result.transfers.some((transfer) => {
+      const debtor = memberById.get(transfer.fromMemberId);
+      const creditor = memberById.get(transfer.toMemberId);
+
+      return !debtor?.walletAddress || !creditor?.walletAddress;
+    });
+
+    if (missingTransferWallet) {
+      return fail("proposal_not_ready", 409, [
+        "A member in this Final Tab needs a settlement wallet before you can continue.",
+      ]);
+    }
 
     const result = await db.transaction(async (tx) => {
+      const [activeProposal] = await tx
+        .select()
+        .from(settlementProposals)
+        .where(
+          and(
+            eq(settlementProposals.tabId, tabId),
+            inArray(settlementProposals.status, ["open", "locked"]),
+          ),
+        )
+        .limit(1);
+
+      if (activeProposal) {
+        tx.rollback();
+      }
+
+      const [versionRow] = await tx
+        .select({
+          maxVersion: sql<number>`coalesce(max(${settlementProposals.proposalVersion}), 0)::int`,
+        })
+        .from(settlementProposals)
+        .where(eq(settlementProposals.tabId, tabId));
+      const proposalVersion = (versionRow?.maxVersion ?? 0) + 1;
+      const finalTab = buildFinalTab({
+        chainId: access.data.tab.networkChainId,
+        coordinatorWalletAddress,
+        excludedExpenses: tabExpenses.filter((expense) => !includedIds.includes(expense.id)),
+        expiresAt,
+        includedExpenses: included,
+        members,
+        proposalVersion,
+        settlement: settlement.result,
+        settlementContractAddress,
+        splits: splitRows.map((row) => row.expense_splits),
+        tabId,
+        tokenAddress: access.data.tab.tokenAddress,
+      });
+
       const [proposal] = await tx
         .insert(settlementProposals)
         .values({
+          canonicalPayloadJson: finalTab.payload,
+          chainId: access.data.tab.networkChainId,
+          coordinatorWalletAddress: finalTab.payload.coordinatorWalletAddress,
           createdByUserId: currentUser.data.user.id,
           excludedExpenseIds: excludedIds,
+          excludedExpensesHash: finalTab.excludedExpensesHash,
           expiresAt,
           includedExpenseIds: includedIds,
+          includedExpensesHash: finalTab.includedExpensesHash,
           netBalancesJson: settlement.result.balances,
-          proposalHash,
+          proposalHash: finalTab.proposalHash,
+          proposalVersion,
+          schemaVersion: finalTab.payload.schemaVersion,
+          settlementContractAddress: finalTab.payload.settlementContractAddress,
           status: "open",
           tabId,
+          tabIdHash: finalTab.tabIdHash,
+          tabKey: finalTab.tabKey,
+          tokenAddress: finalTab.payload.tokenAddress,
           totalAmountBaseUnits: BigInt(settlement.result.totalMovingBaseUnits),
+          transfersHash: finalTab.transfersHash,
           transfersJson: settlement.result.transfers,
         })
         .returning();
@@ -1812,7 +1889,8 @@ export async function createSettlementProposal(input: {
           eventData: {
             includedCount: includedIds.length,
             proposalId: proposal.id,
-            proposalHash,
+            proposalHash: proposal.proposalHash,
+            proposalVersion,
             totalAmountBaseUnits: settlement.result.totalMovingBaseUnits,
             transferCount: settlement.result.transfers.length,
           },
@@ -1883,7 +1961,7 @@ export async function lockSettlementProposal(input: {
 
     if (proposal.expiresAt.getTime() <= Date.now()) {
       return fail("stale_record", 409, [
-        "This proposal expired. Create a fresh proposal before settlement.",
+        "This Final Tab expired. Create a fresh one before settling.",
       ]);
     }
 
@@ -1900,6 +1978,18 @@ export async function lockSettlementProposal(input: {
         .innerJoin(expenses, eq(expenseSplits.expenseId, expenses.id))
         .where(eq(expenses.tabId, proposal.tabId)),
     ]);
+    const settlementContractAddress = normalizeEvmAddress(getSettlementContractAddress());
+
+    if (!settlementContractAddress) {
+      return fail("configuration_missing", 503, ["Settlement is not configured yet."]);
+    }
+
+    if (settlementContractAddress !== proposal.settlementContractAddress.toLowerCase()) {
+      return fail("stale_record", 409, [
+        "Something changed. Cancel this Final Tab and create a fresh one before settlement.",
+      ]);
+    }
+
     const includedSet = new Set(proposal.includedExpenseIds);
     const includedExpenses = tabExpenses.filter((expense) => includedSet.has(expense.id));
 
@@ -1908,13 +1998,13 @@ export async function lockSettlementProposal(input: {
       includedExpenses.some((expense) => expense.status !== "confirmed")
     ) {
       return fail("stale_record", 409, [
-        "This proposal is out of date. Cancel it and create a fresh one before settlement.",
+        "Something changed. Cancel this Final Tab and create a fresh one before settlement.",
       ]);
     }
 
     const settlement = calculateSettlement(
       createSettlementInputsFromTabDetail({
-        expenses: tabExpenses.map(expenseDto),
+        expenses: includedExpenses.map(expenseDto),
         members: members.map(memberDto),
         splits: splitRows.map((row) => splitDto(row.expense_splits)),
         tokenAddress: access.data.tab.tokenAddress,
@@ -1925,20 +2015,45 @@ export async function lockSettlementProposal(input: {
       return fail("settlement_engine_unavailable", 409, [settlement.error.message]);
     }
 
-    const currentPayload = buildProposalHashPayload({
-      excludedExpenseIds: tabExpenses
-        .filter((expense) => !includedSet.has(expense.id))
-        .map((expense) => expense.id),
-      includedExpenseIds: proposal.includedExpenseIds,
-      networkChainId: access.data.tab.networkChainId,
-      settlement: settlement.result,
-      tabId: proposal.tabId,
-      tokenAddress: access.data.tab.tokenAddress,
-    });
+    const coordinator = members.find(
+      (member) =>
+        member.userId === access.data.tab.ownerUserId ||
+        (member.role === "owner" && member.joinStatus === "joined"),
+    );
 
-    if (hashProposalPayload(currentPayload) !== proposal.proposalHash) {
+    if (!coordinator?.walletAddress) {
+      return fail("proposal_not_ready", 409, [
+        "A member in this Final Tab needs a settlement wallet before you can continue.",
+      ]);
+    }
+    const coordinatorWalletAddress = coordinator.walletAddress;
+
+    let currentFinalTab;
+
+    try {
+      currentFinalTab = buildFinalTab({
+        chainId: access.data.tab.networkChainId,
+        coordinatorWalletAddress,
+        excludedExpenses: tabExpenses.filter((expense) => !includedSet.has(expense.id)),
+        expiresAt: proposal.expiresAt,
+        includedExpenses,
+        members,
+        proposalVersion: proposal.proposalVersion,
+        settlement: settlement.result,
+        settlementContractAddress,
+        splits: splitRows.map((row) => row.expense_splits),
+        tabId: proposal.tabId,
+        tokenAddress: access.data.tab.tokenAddress,
+      });
+    } catch {
+      return fail("proposal_not_ready", 409, [
+        "A member in this Final Tab needs a settlement wallet before you can continue.",
+      ]);
+    }
+
+    if (currentFinalTab.proposalHash !== proposal.proposalHash) {
       return fail("stale_record", 409, [
-        "This proposal is out of date. Cancel it and create a fresh one before settlement.",
+        "Something changed. Cancel this Final Tab and create a fresh one before settlement.",
       ]);
     }
 
@@ -1952,14 +2067,14 @@ export async function lockSettlementProposal(input: {
 
     if (missingTransferMember) {
       return fail("proposal_not_ready", 409, [
-        "A member in this settlement needs attention before you can continue.",
+        "A member in this Final Tab needs a settlement wallet before you can continue.",
       ]);
     }
 
     const result = await db.transaction(async (tx) => {
       const [lockedProposal] = await tx
         .update(settlementProposals)
-        .set({ status: "locked", updatedAt: new Date() })
+        .set({ lockedAt: new Date(), status: "locked", updatedAt: new Date() })
         .where(and(eq(settlementProposals.id, proposal.id), eq(settlementProposals.status, "open")))
         .returning();
 
@@ -2076,7 +2191,7 @@ export async function cancelSettlementProposal(input: {
     const result = await db.transaction(async (tx) => {
       const [cancelledProposal] = await tx
         .update(settlementProposals)
-        .set({ status: "cancelled", updatedAt: new Date() })
+        .set({ cancelledAt: new Date(), status: "cancelled", updatedAt: new Date() })
         .where(
           and(
             eq(settlementProposals.id, proposal.id),
@@ -2205,7 +2320,7 @@ export async function previewSettlementProposal(input: {
         previewBlocker({
           id: "proposal-not-locked",
           kind: "tab_not_ready",
-          message: "Lock the proposal before previewing settlement.",
+          message: "Lock the Final Tab before previewing settlement.",
         }),
       );
     }
@@ -2215,7 +2330,7 @@ export async function previewSettlementProposal(input: {
         previewBlocker({
           id: "proposal-expired",
           kind: "expired_proposal",
-          message: "This proposal expired. Create a fresh proposal before settling.",
+          message: "This Final Tab expired. Create a fresh one before settling.",
         }),
       );
     }
@@ -2225,7 +2340,7 @@ export async function previewSettlementProposal(input: {
         previewBlocker({
           id: "proposal-hash-changed",
           kind: "stale_proposal",
-          message: "Something changed. Refresh the preview before settling.",
+          message: "Something changed. Cancel this Final Tab and create a fresh one before settlement.",
         }),
       );
     }
@@ -2268,6 +2383,14 @@ export async function previewSettlementProposal(input: {
           message: "Settlement is not configured yet.",
         }),
       );
+    } else if (settlementContractAddress !== proposal.settlementContractAddress.toLowerCase()) {
+      blockers.push(
+        previewBlocker({
+          id: "contract-changed",
+          kind: "stale_proposal",
+          message: "Something changed. Cancel this Final Tab and create a fresh one before settlement.",
+        }),
+      );
     }
 
     const includedExpenses = tabExpenses.filter((expense) => includedSet.has(expense.id));
@@ -2277,7 +2400,7 @@ export async function previewSettlementProposal(input: {
         previewBlocker({
           id: "included-expense-missing",
           kind: "changed_expense",
-          message: "Something changed. Refresh the preview before settling.",
+          message: "Something changed. Cancel this Final Tab and create a fresh one before settlement.",
         }),
       );
     }
@@ -2289,7 +2412,7 @@ export async function previewSettlementProposal(input: {
             expenseId: expense.id,
             id: `expense-${expense.id}`,
             kind: "changed_expense",
-            message: `${expense.title} changed. Refresh the preview before settling.`,
+            message: "Something changed. Cancel this Final Tab and create a fresh one before settlement.",
           }),
         );
       }
@@ -2302,7 +2425,7 @@ export async function previewSettlementProposal(input: {
     );
     const settlement = calculateSettlement(
       createSettlementInputsFromTabDetail({
-        expenses: normalizedExpenses,
+        expenses: normalizedExpenses.filter((expense) => includedSet.has(expense.id)),
         members: members.map(memberDto),
         splits: splitRows.map((row) => splitDto(row.expense_splits)),
         tokenAddress: tab.tokenAddress,
@@ -2321,27 +2444,51 @@ export async function previewSettlementProposal(input: {
                 ? "changed_member"
                 : "changed_expense",
           memberId: settlement.error.memberId,
-          message: "Something changed. Refresh the preview before settling.",
+          message: "Something changed. Cancel this Final Tab and create a fresh one before settlement.",
         }),
       );
     } else {
-      const currentPayload = buildProposalHashPayload({
-        excludedExpenseIds: tabExpenses
-          .filter((expense) => !includedSet.has(expense.id))
-          .map((expense) => expense.id),
-        includedExpenseIds: proposal.includedExpenseIds,
-        networkChainId: tab.networkChainId,
-        settlement: settlement.result,
-        tabId: proposal.tabId,
-        tokenAddress: tab.tokenAddress,
-      });
+      const coordinator = members.find(
+        (member) =>
+          member.userId === tab.ownerUserId ||
+          (member.role === "owner" && member.joinStatus === "joined"),
+      );
 
-      if (hashProposalPayload(currentPayload) !== proposal.proposalHash) {
+      let currentFinalTab = null;
+
+      if (settlementContractAddress && coordinator?.walletAddress) {
+        try {
+          currentFinalTab = buildFinalTab({
+            chainId: tab.networkChainId,
+            coordinatorWalletAddress: coordinator.walletAddress,
+            excludedExpenses: tabExpenses.filter((expense) => !includedSet.has(expense.id)),
+            expiresAt: proposalRow.expiresAt,
+            includedExpenses,
+            members,
+            proposalVersion: proposalRow.proposalVersion,
+            settlement: settlement.result,
+            settlementContractAddress,
+            splits: splitRows.map((row) => row.expense_splits),
+            tabId: proposal.tabId,
+            tokenAddress: tab.tokenAddress,
+          });
+        } catch {
+          blockers.push(
+            previewBlocker({
+              id: "proposal-wallet-state",
+              kind: "missing_wallet",
+              message: "A member in this Final Tab needs a settlement wallet before you can continue.",
+            }),
+          );
+        }
+      }
+
+      if (currentFinalTab && currentFinalTab.proposalHash !== proposal.proposalHash) {
         blockers.push(
           previewBlocker({
             id: "proposal-stale",
             kind: "stale_proposal",
-            message: "Something changed. Refresh the preview before settling.",
+            message: "Something changed. Cancel this Final Tab and create a fresh one before settlement.",
           }),
         );
       }
@@ -2366,7 +2513,7 @@ export async function previewSettlementProposal(input: {
           previewBlocker({
             id: `transfer-${transfer.id}`,
             kind: "stale_proposal",
-            message: "Something changed. Refresh the preview before settling.",
+            message: "Something changed. Cancel this Final Tab and create a fresh one before settlement.",
           }),
         );
       }
@@ -2380,7 +2527,7 @@ export async function previewSettlementProposal(input: {
             id: `debtor-${transfer.fromMemberId}`,
             kind: "unknown_member",
             memberId: transfer.fromMemberId,
-            message: "A member changed. Refresh the preview before settling.",
+            message: "Something changed. Cancel this Final Tab and create a fresh one before settlement.",
           }),
         );
       }
@@ -2391,7 +2538,7 @@ export async function previewSettlementProposal(input: {
             id: `creditor-${transfer.toMemberId}`,
             kind: "unknown_member",
             memberId: transfer.toMemberId,
-            message: "A member changed. Refresh the preview before settling.",
+            message: "Something changed. Cancel this Final Tab and create a fresh one before settlement.",
           }),
         );
       }
@@ -2578,7 +2725,7 @@ export async function previewSettlementProposal(input: {
           previewBlocker({
             id: "snapshot-changed",
             kind: "stale_proposal",
-            message: "Something changed. Refresh the preview before settling.",
+            message: "Something changed. Cancel this Final Tab and create a fresh one before settlement.",
           }),
         );
       }
