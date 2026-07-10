@@ -5,6 +5,7 @@ import { FiAlertCircle, FiCheckCircle, FiRefreshCcw, FiShield } from "react-icon
 import { motion } from "motion/react";
 import { AuthorizationReadinessList } from "@/components/tabs/AuthorizationReadinessList";
 import { AuthorizationSheet } from "@/components/tabs/AuthorizationSheet";
+import { SettlementAccountStatusRow } from "@/components/account/SettlementAccountStatusRow";
 import {
   buildReadinessItems,
   deriveDebtorAmounts,
@@ -75,6 +76,9 @@ export function SettlementAuthorizationSection({
   const normalizedMemberWallet = normalizeAddress(currentMember?.walletAddress);
   const settlementContractAddress = normalizeAddress(detail.tab.settlementContractAddress);
   const tokenReady = isExpectedToken(detail.tab.tokenAddress);
+  const settlementAccountReady =
+    account?.settlementAccount?.delegationStatus === "ready" &&
+    account.settlementAccount.configHash.length > 0;
   const proposalExpired = isExpired(lockedProposal, nowMs);
   const authorizationExpired =
     currentAuthorization &&
@@ -93,6 +97,7 @@ export function SettlementAuthorizationSection({
     isDebtor &&
     Boolean(settlementContractAddress) &&
     tokenReady &&
+    settlementAccountReady &&
     !proposalExpired &&
     Boolean(normalizedAccountWallet) &&
     normalizedAccountWallet === normalizedMemberWallet;
@@ -107,6 +112,7 @@ export function SettlementAuthorizationSection({
     authorizationRevoked: Boolean(currentAuthorization?.revokedAt),
     proposalExpired: Boolean(proposalExpired),
     settlementContractAddress,
+    settlementAccountReady,
     tokenReady,
   });
 
@@ -154,6 +160,9 @@ export function SettlementAuthorizationSection({
       ) : (
         <div className="grid gap-4">
           <div className="grid gap-3 rounded-md border border-outline-variant bg-surface-container-lowest p-4">
+            {!settlementAccountReady ? (
+              <SettlementAccountStatusRow readiness={account?.settlementAccount ?? null} />
+            ) : null}
             <div className="grid gap-2 sm:grid-cols-[1fr_auto] sm:items-end">
               <div>
                 <p className="text-sm font-semibold text-muted">
@@ -246,6 +255,7 @@ function getHelperCopy(input: {
   authorizationRevoked: boolean;
   proposalExpired: boolean;
   settlementContractAddress: string | null;
+  settlementAccountReady: boolean;
   tokenReady: boolean;
 }) {
   if (!input.lockedProposal) {
@@ -278,6 +288,10 @@ function getHelperCopy(input: {
 
   if (!input.settlementContractAddress || !input.tokenReady) {
     return "Settlement is not configured yet.";
+  }
+
+  if (!input.settlementAccountReady) {
+    return "Preparing secure settlement. You will not need gas to continue.";
   }
 
   if (!input.normalizedAccountWallet) {
