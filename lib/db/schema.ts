@@ -303,6 +303,13 @@ export const settlementProposals = pgTable(
       .defaultNow()
       .notNull(),
     lockedAt: timestamp("locked_at", { mode: "date", withTimezone: true }),
+    registrationTxHash: text("registration_tx_hash"),
+    registeredAt: timestamp("registered_at", { mode: "date", withTimezone: true }),
+    cancellationTxHash: text("cancellation_tx_hash"),
+    onchainCancelledAt: timestamp("onchain_cancelled_at", {
+      mode: "date",
+      withTimezone: true,
+    }),
     cancelledAt: timestamp("cancelled_at", { mode: "date", withTimezone: true }),
     executedAt: timestamp("executed_at", { mode: "date", withTimezone: true }),
   },
