@@ -8,10 +8,8 @@ contract DeployTabySettlement is Script {
     address public constant ARBITRUM_SEPOLIA_USDC = 0x75faf114eafb1BDbe2F0316DF893fd58CE46AA4d;
 
     function run() public returns (TabySettlement settlement) {
-        address proposalAuthorizer = vm.envAddress("PROPOSAL_AUTHORIZER_ADDRESS");
-
         vm.startBroadcast();
-        settlement = new TabySettlement(ARBITRUM_SEPOLIA_USDC, proposalAuthorizer);
+        settlement = new TabySettlement(ARBITRUM_SEPOLIA_USDC);
         vm.stopBroadcast();
     }
 }
