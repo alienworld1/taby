@@ -1,5 +1,5 @@
 import type { Address, Hex } from "viem";
-import { keccak256, stringToBytes } from "viem";
+import { encodeFunctionData, erc20Abi, keccak256, stringToBytes } from "viem";
 import type { FinalTabPayload } from "./finalTab";
 
 export const tabySettlementAbi = [
@@ -245,6 +245,123 @@ export function toSettlementContractTransfers(
     to: transfer.toWalletAddress,
     toMemberIdHash: memberIdHash(transfer.toMemberId),
   }));
+}
+
+export type EncodedSettlementCall = {
+  data: Hex;
+  to: Address;
+  value: bigint;
+};
+
+export function encodeRegisterFinalTabCall(input: {
+  proposalHash: Hex;
+  settlementContractAddress: Address;
+  payload: FinalTabPayload;
+}): EncodedSettlementCall {
+  return {
+    data: encodeFunctionData({
+      abi: tabySettlementAbi,
+      args: [toFinalTabContractPayload(input.payload), input.proposalHash],
+      functionName: "registerFinalTab",
+    }),
+    to: input.settlementContractAddress,
+    value: BigInt(0),
+  };
+}
+
+export function encodeCancelFinalTabCall(input: {
+  proposalHash: Hex;
+  settlementContractAddress: Address;
+  tabKey: Hex;
+}): EncodedSettlementCall {
+  return {
+    data: encodeFunctionData({
+      abi: tabySettlementAbi,
+      args: [input.tabKey, input.proposalHash],
+      functionName: "cancelFinalTab",
+    }),
+    to: input.settlementContractAddress,
+    value: BigInt(0),
+  };
+}
+
+export function encodeAuthorizeFinalTabBatch(input: {
+  exactAmountBaseUnits: string;
+  expiresAtUnixSeconds: string;
+  nonce: string;
+  proposalHash: Hex;
+  settlementContractAddress: Address;
+  tabKey: Hex;
+  tokenAddress: Address;
+}): EncodedSettlementCall[] {
+  return [
+    encodeTokenApprovalCall({
+      amountBaseUnits: "0",
+      spender: input.settlementContractAddress,
+      tokenAddress: input.tokenAddress,
+    }),
+    encodeTokenApprovalCall({
+      amountBaseUnits: input.exactAmountBaseUnits,
+      spender: input.settlementContractAddress,
+      tokenAddress: input.tokenAddress,
+    }),
+    {
+      data: encodeFunctionData({
+        abi: tabySettlementAbi,
+        args: [
+          input.tabKey,
+          input.proposalHash,
+          BigInt(input.exactAmountBaseUnits),
+          BigInt(input.expiresAtUnixSeconds),
+          BigInt(input.nonce),
+        ],
+        functionName: "authorizeFinalTab",
+      }),
+      to: input.settlementContractAddress,
+      value: BigInt(0),
+    },
+  ];
+}
+
+export function encodeRevokeFinalTabBatch(input: {
+  nonce: string;
+  proposalHash: Hex;
+  settlementContractAddress: Address;
+  tabKey: Hex;
+  tokenAddress: Address;
+}): EncodedSettlementCall[] {
+  return [
+    encodeTokenApprovalCall({
+      amountBaseUnits: "0",
+      spender: input.settlementContractAddress,
+      tokenAddress: input.tokenAddress,
+    }),
+    {
+      data: encodeFunctionData({
+        abi: tabySettlementAbi,
+        args: [input.tabKey, input.proposalHash, BigInt(input.nonce)],
+        functionName: "revokeFinalTab",
+      }),
+      to: input.settlementContractAddress,
+      value: BigInt(0),
+    },
+  ];
+}
+
+function encodeTokenApprovalCall(input: {
+  amountBaseUnits: string;
+  spender: Address;
+  tokenAddress: Address;
+}): EncodedSettlementCall {
+  return {
+    data: encodeFunctionData({
+      abi: erc20Abi,
+      args: [input.spender, BigInt(input.amountBaseUnits)],
+      functionName: "approve",
+    }),
+    to: input.tokenAddress,
+    value: BigInt(0),
+  };
 }
 
 function memberIdHash(memberId: string): Hex {
