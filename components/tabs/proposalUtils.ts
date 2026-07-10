@@ -65,6 +65,7 @@ export function buildProposalBlockers(input: {
   ).length;
   const proposal = input.proposal;
   const transfers = proposal?.transfers ?? input.settlement?.transfers ?? [];
+  const finalTabIsStale = proposal ? isFinalTabStale(input.detail, proposal) : false;
 
   if (!input.currentMember || input.currentMember.joinStatus !== "joined") {
     blockers.push({
@@ -73,7 +74,7 @@ export function buildProposalBlockers(input: {
       blocksLock: true,
       id: "not-joined",
       kind: "invalid_state",
-      message: "Join this tab before creating or locking a proposal.",
+      message: "Join this tab before creating or locking a Final Tab.",
       severity: "blocking",
     });
   }
@@ -97,7 +98,7 @@ export function buildProposalBlockers(input: {
       blocksLock: false,
       id: "no-confirmed-expenses",
       kind: "no_confirmed_expenses",
-      message: "Confirm at least one expense before creating a proposal.",
+      message: "Confirmed expenses will appear here when your group is ready.",
       severity: "info",
     });
   }
@@ -211,7 +212,19 @@ export function buildProposalBlockers(input: {
       blocksLock: true,
       id: "expired-proposal",
       kind: "expired_proposal",
-      message: "This proposal expired. Create a fresh proposal before settlement.",
+      message: "This Final Tab expired. Create a fresh one before settling.",
+      severity: "blocking",
+    });
+  }
+
+  if (proposal && finalTabIsStale) {
+    blockers.push({
+      blocksCreate: false,
+      blocksFutureSettlement: true,
+      blocksLock: true,
+      id: "stale-final-tab",
+      kind: "stale_proposal",
+      message: "Something changed. Cancel this Final Tab and create a fresh one before settlement.",
       severity: "blocking",
     });
   }
@@ -230,12 +243,93 @@ export function getExpenseReason(expense: ExpenseResponse) {
     case "excluded":
       return "Outside settlement";
     case "locked":
-      return "Locked in a proposal";
+      return "Locked in a Final Tab";
     case "settled":
       return "Already settled";
     default:
       return "Outside settlement";
   }
+}
+
+function isFinalTabStale(detail: TabDetailResponse, proposal: SettlementProposalResponse) {
+  if (
+    detail.tab.networkChainId !== proposal.chainId ||
+    detail.tab.tokenAddress.toLowerCase() !== proposal.tokenAddress.toLowerCase() ||
+    (detail.tab.settlementContractAddress ?? "").toLowerCase() !==
+      proposal.settlementContractAddress.toLowerCase()
+  ) {
+    return true;
+  }
+
+  if (!isRecord(proposal.canonicalPayload)) {
+    return false;
+  }
+
+  const includedSnapshots = getArray(proposal.canonicalPayload.includedExpenses);
+  const excludedSnapshots = getArray(proposal.canonicalPayload.excludedExpenses);
+  const expenseById = new Map(detail.expenses.map((expense) => [expense.id, expense]));
+  const splitsByExpenseId = new Map<string, { memberId: string; shareBaseUnits: string }[]>();
+
+  for (const split of detail.splits) {
+    const rows = splitsByExpenseId.get(split.expenseId) ?? [];
+    rows.push({ memberId: split.memberId, shareBaseUnits: split.shareBaseUnits });
+    splitsByExpenseId.set(split.expenseId, rows);
+  }
+
+  for (const snapshot of includedSnapshots) {
+    if (!isRecord(snapshot) || typeof snapshot.expenseId !== "string") {
+      return true;
+    }
+
+    const expense = expenseById.get(snapshot.expenseId);
+
+    if (
+      !expense ||
+      (expense.status !== "confirmed" && expense.status !== "locked") ||
+      expense.amountBaseUnits !== snapshot.amountBaseUnits ||
+      expense.payerMemberId !== snapshot.payerMemberId ||
+      expense.tokenAddress.toLowerCase() !== String(snapshot.tokenAddress).toLowerCase()
+    ) {
+      return true;
+    }
+
+    const currentSplits = [...(splitsByExpenseId.get(expense.id) ?? [])].sort((a, b) =>
+      a.memberId.localeCompare(b.memberId),
+    );
+    const snapshotSplits = getArray(snapshot.splitEntries)
+      .filter(isRecord)
+      .map((split) => ({
+        memberId: String(split.memberId),
+        shareBaseUnits: String(split.shareBaseUnits),
+      }))
+      .sort((a, b) => a.memberId.localeCompare(b.memberId));
+
+    if (JSON.stringify(currentSplits) !== JSON.stringify(snapshotSplits)) {
+      return true;
+    }
+  }
+
+  for (const snapshot of excludedSnapshots) {
+    if (!isRecord(snapshot) || typeof snapshot.expenseId !== "string") {
+      return true;
+    }
+
+    const expense = expenseById.get(snapshot.expenseId);
+
+    if (!expense || expense.status !== snapshot.status) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+function getArray(value: unknown) {
+  return Array.isArray(value) ? value : [];
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
 }
 
 function dedupeBlockers(blockers: ProposalBlocker[]) {

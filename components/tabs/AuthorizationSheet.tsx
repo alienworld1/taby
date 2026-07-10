@@ -293,7 +293,7 @@ export function AuthorizationSheet({
           <div className="flex items-start gap-3 rounded-md border border-primary-fixed bg-primary-soft px-4 py-3 text-primary-strong">
             <FiCheckCircle aria-hidden="true" className="mt-0.5 shrink-0" />
             <div>
-              <p className="text-sm font-semibold">You are authorized for this proposal.</p>
+              <p className="text-sm font-semibold">You are authorized for this Final Tab.</p>
               <p className="mt-1 text-sm leading-6">
                 Your wallet needs enough USDC before settlement can finish.
               </p>

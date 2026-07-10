@@ -27,7 +27,7 @@ export function SettlementProposalSummaryCard({
   const statusCopy = expired
     ? "Expired"
     : proposal.status === "locked"
-      ? "Locked for review"
+      ? "Final Tab locked"
       : proposal.status === "open"
         ? "Ready to lock"
         : "Needs review";

@@ -20,7 +20,7 @@ export function ProposalHashRow({ hash }: ProposalHashRowProps) {
       >
         <span className="flex min-w-0 items-center gap-2 text-sm font-semibold text-muted">
           <FiHash aria-hidden="true" className="shrink-0" />
-          Proposal hash
+          Final Tab hash
         </span>
         <span className="font-mono text-xs text-foreground">{shortHash(hash)}</span>
       </button>

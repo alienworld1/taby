@@ -18,7 +18,7 @@ export function AuthorizationReadinessList({
       <div className="flex items-start gap-3 rounded-md border border-primary-fixed bg-primary-soft px-4 py-3 text-primary-strong">
         <FiCheckCircle aria-hidden="true" className="mt-0.5 shrink-0" />
         <p className="text-sm font-semibold leading-6">
-          No one owes anything in this proposal.
+          No one owes anything in this Final Tab.
         </p>
       </div>
     );

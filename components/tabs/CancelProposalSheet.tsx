@@ -23,18 +23,18 @@ export function CancelProposalSheet({
 }: CancelProposalSheetProps) {
   return (
     <Sheet
-      description="This returns included expenses to review so your group can update the tab and create a fresh proposal."
+      description="This returns included expenses to review so your group can update the tab and create a fresh Final Tab."
       open={open}
-      title="Cancel this proposal?"
+      title="Cancel this Final Tab?"
       onOpenChange={onOpenChange}
     >
       <div className="grid gap-4">
         {error ? (
-          <ErrorCallout message={error.message} title="We could not cancel the proposal" />
+          <ErrorCallout message={error.message} title="We could not cancel the Final Tab" />
         ) : null}
         <div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
           <Button onClick={() => onOpenChange(false)} variant="secondary">
-            Keep proposal
+            Keep Final Tab
           </Button>
           <Button
             icon={<FiXCircle aria-hidden="true" />}
@@ -42,7 +42,7 @@ export function CancelProposalSheet({
             onClick={onSubmit}
             variant="danger"
           >
-            Cancel proposal
+            Cancel Final Tab
           </Button>
         </div>
       </div>

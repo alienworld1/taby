@@ -33,7 +33,7 @@ export function ProposalExpenseList({
         <p className="rounded-md border border-outline-variant bg-surface-container-low px-4 py-3 text-sm leading-6 text-muted">
           {included
             ? "Confirmed expenses will appear here when your group is ready."
-            : "Nothing is outside this proposal right now."}
+            : "Nothing is outside this Final Tab right now."}
         </p>
       ) : (
         <div className="divide-y divide-outline-variant rounded-md border border-outline-variant bg-surface-container-lowest">

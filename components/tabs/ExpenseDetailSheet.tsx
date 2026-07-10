@@ -187,7 +187,7 @@ export function ExpenseDetailSheet({
             <div className="flex items-start gap-3 rounded-md border border-primary-fixed bg-primary-soft p-4 text-primary-strong">
               <FiLock aria-hidden="true" className="mt-0.5 shrink-0" />
               <p className="text-sm leading-6">
-                This expense is locked in a settlement proposal. Cancel the proposal to edit it.
+                This expense is locked in a Final Tab. Cancel the Final Tab to edit it.
               </p>
             </div>
           ) : null}
@@ -237,7 +237,7 @@ export function ExpenseDetailSheet({
             </div>
           ) : expense.expense.status === "locked" ? (
             <p className="border-t border-outline-variant pt-4 text-sm leading-6 text-muted">
-              This expense is locked in a settlement proposal. Cancel the proposal to edit it.
+              This expense is locked in a Final Tab. Cancel the Final Tab to edit it.
             </p>
           ) : null}
         </div>

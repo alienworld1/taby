@@ -163,10 +163,10 @@ export function SettlementProposalSection({
     <section aria-labelledby="settlement-proposal-heading" className="grid gap-4">
       <div>
         <h2 id="settlement-proposal-heading" className="text-xl font-semibold text-foreground">
-          Settlement proposal
+          Final Tab
         </h2>
         <p className="mt-1 text-sm leading-6 text-muted">
-          Review the exact expenses and transfers before anyone authorizes settlement.
+          Review the exact expenses and transfers before anyone approves settlement.
         </p>
       </div>
 
@@ -178,7 +178,7 @@ export function SettlementProposalSection({
             </Button>
           }
           message="Refresh the tab. If this keeps happening, one expense may need to be reviewed again."
-          title="We could not prepare the proposal."
+          title="We could not prepare the Final Tab."
         />
       ) : null}
 
@@ -199,12 +199,12 @@ export function SettlementProposalSection({
                     <div className="min-w-0">
                       <h3 className="text-base font-semibold text-foreground">
                         {detail.expenses.some((expense) => expense.status === "confirmed")
-                          ? "Ready to review settlement?"
-                          : "No proposal yet."}
+                          ? "Ready to make this final?"
+                          : "No Final Tab yet."}
                       </h3>
                       <p className="mt-1 text-sm leading-6 text-muted">
                         {detail.expenses.some((expense) => expense.status === "confirmed")
-                          ? "Only confirmed expenses will be included. Anything pending or disputed stays outside settlement."
+                          ? "Only confirmed expenses will be included. Anything pending or disputed stays outside."
                           : "Confirmed expenses will appear here when your group is ready."}
                       </p>
                     </div>
@@ -277,21 +277,21 @@ export function SettlementProposalSection({
                     {!canOpenSettlementPreview ? (
                       <p className="text-sm leading-6 text-muted">
                         {expired
-                          ? "This proposal expired. Create a fresh proposal before settling."
+                          ? "This Final Tab expired. Create a fresh one before settling."
                           : settlementConfigBlocker ??
                             settlementPreviewBlocker?.message ??
-                            "Lock the proposal before previewing settlement."}
+                            "Lock the Final Tab before previewing settlement."}
                       </p>
                     ) : null}
                   </div>
                 ) : proposal.status === "open" ? (
                   <p className="rounded-md border border-outline-variant bg-surface-container-low px-4 py-3 text-sm leading-6 text-muted">
-                    Lock the proposal before previewing settlement.
+                    Lock the Final Tab before previewing settlement.
                   </p>
                 ) : null}
                 {expired ? (
                   <div className="rounded-md border border-outline-variant bg-secondary-soft px-4 py-3 text-sm leading-6 text-secondary">
-                    This proposal expired. Cancel it and create a fresh one before settlement.
+                    This Final Tab expired. Create a fresh one before settling.
                   </div>
                 ) : null}
                 <ProposalActionPanel

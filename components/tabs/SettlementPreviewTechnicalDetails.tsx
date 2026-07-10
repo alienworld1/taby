@@ -36,7 +36,7 @@ export function SettlementPreviewTechnicalDetails({
               <dd className="break-all">{snapshot.settlementContractAddress}</dd>
             </div>
             <div className="grid gap-1">
-              <dt className="text-xs uppercase text-muted">Proposal hash</dt>
+              <dt className="text-xs uppercase text-muted">Final Tab hash</dt>
               <dd className="break-words">{shortHash(snapshot.proposalHash)}</dd>
             </div>
           </dl>

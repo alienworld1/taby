@@ -149,7 +149,7 @@ export function SettlementAuthorizationSection({
 
       {!lockedProposal ? (
         <p className="rounded-md border border-outline-variant bg-surface-container-lowest px-4 py-3 text-sm font-semibold leading-6 text-muted">
-          Lock the proposal before anyone authorizes settlement.
+          Lock the Final Tab before anyone approves settlement.
         </p>
       ) : (
         <div className="grid gap-4">
@@ -249,7 +249,7 @@ function getHelperCopy(input: {
   tokenReady: boolean;
 }) {
   if (!input.lockedProposal) {
-    return "Lock the proposal before anyone authorizes settlement.";
+    return "Lock the Final Tab before anyone approves settlement.";
   }
 
   if (!input.currentMember || input.currentMember.joinStatus !== "joined") {
@@ -257,11 +257,11 @@ function getHelperCopy(input: {
   }
 
   if (!input.isDebtor) {
-    return "You do not owe anything in this proposal.";
+    return "You do not owe anything in this Final Tab.";
   }
 
   if (input.proposalExpired) {
-    return "This proposal expired. Create a fresh one before authorizing.";
+    return "This Final Tab expired. Create a fresh one before approving.";
   }
 
   if (input.authorizationRevoked) {
@@ -273,7 +273,7 @@ function getHelperCopy(input: {
   }
 
   if (input.authorizationActive) {
-    return "You are authorized for this proposal.";
+    return "You are authorized for this Final Tab.";
   }
 
   if (!input.settlementContractAddress || !input.tokenReady) {

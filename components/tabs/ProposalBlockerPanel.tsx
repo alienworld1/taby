@@ -17,7 +17,7 @@ export function ProposalBlockerPanel({ blockers, reducedMotion }: ProposalBlocke
         <div>
           <h3 className="text-sm font-semibold">Ready for review</h3>
           <p className="mt-1 text-sm leading-6">
-            The proposal can be locked when your group is ready.
+            The Final Tab can be locked when your group is ready.
           </p>
         </div>
       </div>

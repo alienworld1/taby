@@ -50,8 +50,8 @@ export function ProposalActionPanel({
           message={error.message}
           title={
             action === "create"
-              ? "We could not create the proposal."
-              : "We could not update the proposal."
+              ? "We could not create the Final Tab."
+              : "We could not update the Final Tab."
           }
         />
       ) : null}
@@ -65,7 +65,7 @@ export function ProposalActionPanel({
             loading={loadingAction === "create"}
             onClick={onCreate}
           >
-            {loadingAction === "create" ? "Creating proposal" : "Create proposal"}
+            {loadingAction === "create" ? "Creating Final Tab" : "Create Final Tab"}
           </Button>
           {disabledReason ? <p className="text-sm leading-6 text-muted">{disabledReason}</p> : null}
         </div>
@@ -80,7 +80,7 @@ export function ProposalActionPanel({
               loading={loadingAction === "lock"}
               onClick={onLock}
             >
-              {loadingAction === "lock" ? "Locking proposal" : "Lock proposal"}
+              {loadingAction === "lock" ? "Locking Final Tab" : "Lock Final Tab"}
             </Button>
             <Button
               disabled={loadingAction !== null}
@@ -88,7 +88,7 @@ export function ProposalActionPanel({
               onClick={onCancel}
               variant="secondary"
             >
-              Cancel proposal
+              Cancel Final Tab
             </Button>
           </div>
           {disabledReason ? <p className="text-sm leading-6 text-muted">{disabledReason}</p> : null}
@@ -98,7 +98,7 @@ export function ProposalActionPanel({
       {proposal?.status === "locked" ? (
         <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center">
           <p className="text-sm leading-6 text-muted">
-            Included expenses are locked in this proposal. Cancel it before settlement starts to edit them.
+            This agreement is fixed. Cancel it and create a fresh Final Tab if anything changes.
           </p>
           <Button
             disabled={loadingAction !== null}
@@ -106,7 +106,7 @@ export function ProposalActionPanel({
             onClick={onCancel}
             variant="secondary"
           >
-            Cancel proposal
+            Cancel Final Tab
           </Button>
         </div>
       ) : null}

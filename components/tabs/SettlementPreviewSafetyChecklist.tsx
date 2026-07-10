@@ -8,7 +8,7 @@ type SettlementPreviewSafetyChecklistProps = {
 };
 
 const items = [
-  "Proposal is locked",
+  "Final Tab is locked",
   "Confirmed expenses only",
   "Authorizations are active",
   "Caps cover each share",
