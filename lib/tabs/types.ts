@@ -135,19 +135,33 @@ export type ExpenseResponse = {
 };
 
 export type SettlementProposalResponse = {
+  canonicalPayload: unknown;
+  chainId: number;
+  coordinatorWalletAddress: string;
   createdAt: string;
   createdByUserId: string;
+  cancelledAt: string | null;
   debtorAmountsBaseUnits: Record<string, string>;
   executedAt: string | null;
   excludedExpenseIds: string[];
+  excludedExpensesHash: string;
   expiresAt: string;
   id: string;
   includedExpenseIds: string[];
+  includedExpensesHash: string;
+  lockedAt: string | null;
   netBalances: MemberNetBalance[];
   proposalHash: string;
+  proposalVersion: number;
+  schemaVersion: number;
+  settlementContractAddress: string;
   status: SettlementProposalStatus;
   tabId: string;
+  tabIdHash: string;
+  tabKey: string;
+  tokenAddress: string;
   totalAmountBaseUnits: string;
+  transfersHash: string;
   transfers: SettlementTransfer[];
   updatedAt: string;
 };

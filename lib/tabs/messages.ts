@@ -31,15 +31,15 @@ export function tabErrorMessage(code: TabErrorCode) {
     case "expense_not_involved":
       return "Only members included in this expense can confirm it.";
     case "proposal_not_ready":
-      return "Confirm at least one expense before creating a proposal.";
+      return "Confirmed expenses will appear here when your group is ready.";
     case "configuration_missing":
       return "This action is not ready yet.";
     case "account_unavailable":
       return "We could not load your account. Sign in again to continue.";
     case "settlement_engine_unavailable":
-      return "We could not create the proposal.";
+      return "We could not prepare the Final Tab.";
     case "stale_record":
-      return "This proposal is out of date. Cancel it and create a fresh one before settlement.";
+      return "Something changed. Cancel this Final Tab and create a fresh one before settlement.";
     default:
       return "Something got in the way. Try again.";
   }
