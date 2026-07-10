@@ -53,6 +53,7 @@ export const expenseConfirmationStatusEnum = pgEnum("expense_confirmation_status
 export const authorizationMethodEnum = pgEnum("authorization_method", [
   "erc20_allowance",
   "zerodev_session_key",
+  "zerodev_final_tab",
 ]);
 export const settlementProposalStatusEnum = pgEnum("settlement_proposal_status", [
   "draft",
@@ -87,6 +88,10 @@ export const paymasterPolicyStatusEnum = pgEnum("paymaster_policy_status", [
 export const userOperationPurposeEnum = pgEnum("user_operation_purpose", [
   "diagnostic_batch",
   "account_initialization",
+  "final_tab_registration",
+  "final_tab_authorization",
+  "final_tab_revocation",
+  "final_tab_cancellation",
 ]);
 export const userOperationStatusEnum = pgEnum("user_operation_status", [
   "submitted",
@@ -353,19 +358,29 @@ export const tabAuthorizations = pgTable(
     memberId: uuid("member_id")
       .notNull()
       .references(() => tabMembers.id),
+    proposalId: uuid("proposal_id").references(() => settlementProposals.id),
+    proposalHash: text("proposal_hash"),
     walletAddress: text("wallet_address").notNull(),
     tokenAddress: text("token_address").notNull(),
     settlementContractAddress: text("settlement_contract_address").notNull(),
+    authorizationAmountBaseUnits: bigint("authorization_amount_base_units", {
+      mode: "bigint",
+    }),
     capBaseUnits: bigint("cap_base_units", { mode: "bigint" }).notNull(),
     maxSingleSettlementBaseUnits: bigint("max_single_settlement_base_units", {
       mode: "bigint",
     }).notNull(),
     expiresAt: timestamp("expires_at", { mode: "date", withTimezone: true }).notNull(),
+    authorizationNonce: bigint("authorization_nonce", { mode: "bigint" }),
     revokedAt: timestamp("revoked_at", { mode: "date", withTimezone: true }),
     authorizationMethod: authorizationMethodEnum("authorization_method")
       .default("erc20_allowance")
       .notNull(),
     allowanceTxHash: text("allowance_tx_hash"),
+    userOperationHash: text("user_operation_hash"),
+    authorizationTxHash: text("authorization_tx_hash"),
+    revocationTxHash: text("revocation_tx_hash"),
+    confirmedBlock: bigint("confirmed_block", { mode: "bigint" }),
     sessionKeyRef: text("session_key_ref"),
     createdAt: timestamp("created_at", { mode: "date", withTimezone: true })
       .defaultNow()
@@ -377,6 +392,8 @@ export const tabAuthorizations = pgTable(
   (table) => [
     index("tab_authorizations_tab_id_idx").on(table.tabId),
     index("tab_authorizations_member_id_idx").on(table.memberId),
+    index("tab_authorizations_proposal_idx").on(table.proposalId),
+    index("tab_authorizations_proposal_hash_idx").on(table.proposalHash),
   ],
 );
 
