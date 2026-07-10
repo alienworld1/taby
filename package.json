@@ -7,7 +7,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "test:settlement": "tsc --rootDir . --outDir /tmp/taby-settlement-tests --module commonjs --target ES2022 --moduleResolution node --noEmit false --skipLibCheck lib/tabs/settlement.ts lib/tabs/settlement.test.ts && node /tmp/taby-settlement-tests/lib/tabs/settlement.test.js"
+    "test:settlement": "tsc --rootDir . --outDir /tmp/taby-settlement-tests --module commonjs --target ES2022 --moduleResolution node --noEmit false --skipLibCheck lib/tabs/settlement.ts lib/tabs/settlement.test.ts && NODE_PATH=$PWD/node_modules node /tmp/taby-settlement-tests/lib/tabs/settlement.test.js"
   },
   "dependencies": {
     "@magic-sdk/admin": "^2.8.2",
@@ -19,7 +19,8 @@
     "postgres": "^3.4.9",
     "react": "19.2.4",
     "react-dom": "19.2.4",
-    "react-icons": "^5.7.0"
+    "react-icons": "^5.7.0",
+    "viem": "^2.55.0"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
