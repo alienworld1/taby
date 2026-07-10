@@ -273,7 +273,19 @@ export const settlementProposals = pgTable(
     tabId: uuid("tab_id")
       .notNull()
       .references(() => tabs.id),
+    schemaVersion: integer("schema_version").default(1).notNull(),
+    proposalVersion: integer("proposal_version").notNull(),
+    canonicalPayloadJson: jsonb("canonical_payload_json").notNull(),
     proposalHash: text("proposal_hash").notNull(),
+    tabIdHash: text("tab_id_hash").notNull(),
+    tabKey: text("tab_key").notNull(),
+    includedExpensesHash: text("included_expenses_hash").notNull(),
+    excludedExpensesHash: text("excluded_expenses_hash").notNull(),
+    transfersHash: text("transfers_hash").notNull(),
+    chainId: integer("chain_id").notNull(),
+    tokenAddress: text("token_address").notNull(),
+    settlementContractAddress: text("settlement_contract_address").notNull(),
+    coordinatorWalletAddress: text("coordinator_wallet_address").notNull(),
     status: settlementProposalStatusEnum("status").default("draft").notNull(),
     includedExpenseIds: uuid("included_expense_ids").array().notNull(),
     excludedExpenseIds: uuid("excluded_expense_ids").array().notNull(),
@@ -290,11 +302,18 @@ export const settlementProposals = pgTable(
     updatedAt: timestamp("updated_at", { mode: "date", withTimezone: true })
       .defaultNow()
       .notNull(),
+    lockedAt: timestamp("locked_at", { mode: "date", withTimezone: true }),
+    cancelledAt: timestamp("cancelled_at", { mode: "date", withTimezone: true }),
     executedAt: timestamp("executed_at", { mode: "date", withTimezone: true }),
   },
   (table) => [
     index("settlement_proposals_tab_id_idx").on(table.tabId),
     index("settlement_proposals_proposal_hash_idx").on(table.proposalHash),
+    index("settlement_proposals_tab_key_idx").on(table.tabKey),
+    uniqueIndex("settlement_proposals_tab_version_idx").on(
+      table.tabId,
+      table.proposalVersion,
+    ),
   ],
 );
 
