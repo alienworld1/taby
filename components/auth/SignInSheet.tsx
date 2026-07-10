@@ -73,7 +73,7 @@ export function SignInSheet() {
             disabled={!magicReady || isBusy}
             icon={<FiMail aria-hidden="true" />}
             loading={isBusy}
-            onClick={signIn}
+            onClick={() => void signIn()}
           >
             Continue with email
           </Button>

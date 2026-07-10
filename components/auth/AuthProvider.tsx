@@ -3,6 +3,7 @@
 import { createContext, useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import { Magic, type MagicUserMetadata } from "magic-sdk";
+import type { EIP1193Provider } from "viem";
 import type { Account, AccountErrorCode, AccountResponse } from "@/lib/account/types";
 
 type AuthStatus = "initializing" | "signedOut" | "onboarding" | "signedIn" | "error";
@@ -15,13 +16,14 @@ type AuthContextValue = {
   status: AuthStatus;
   closeSignIn: () => void;
   getDidToken: () => Promise<string | null>;
+  getWalletProvider: () => EIP1193Provider | null;
   requestWallet: <T = unknown>(payload: {
     method: string;
     params?: unknown[];
   }) => Promise<T>;
   openSignIn: () => void;
   retryAccountSetup: () => Promise<void>;
-  signIn: () => Promise<void>;
+  signIn: (options?: { redirectToDashboard?: boolean }) => Promise<void>;
   signOut: () => Promise<void>;
   updateDisplayName: (displayName: string) => Promise<{ error?: string; ok: boolean }>;
 };
@@ -52,7 +54,11 @@ function safeErrorCode(value: unknown): AccountErrorCode {
     value === "login_invalid" ||
     value === "wallet_unavailable" ||
     value === "account_unavailable" ||
-    value === "configuration_missing"
+    value === "configuration_missing" ||
+    value === "settlement_account_mismatch" ||
+    value === "zerodev_config_mismatch" ||
+    value === "zerodev_not_ready" ||
+    value === "sponsorship_unavailable"
   ) {
     return value;
   }
@@ -214,7 +220,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     };
   }, [magic, setupAccount]);
 
-  const signIn = useCallback(async () => {
+  const signIn = useCallback(async (options?: { redirectToDashboard?: boolean }) => {
     if (!magic) {
       setStatus("error");
       setErrorCode("configuration_missing");
@@ -228,7 +234,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       await magic.wallet.connectWithUI();
       const accountReady = await setupAccount(magic);
 
-      if (accountReady) {
+      if (accountReady && options?.redirectToDashboard !== false) {
         router.push("/dashboard");
       }
     } catch {
@@ -286,6 +292,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, [magic]);
 
+  const getWalletProvider = useCallback(() => {
+    return magic?.rpcProvider ?? null;
+  }, [magic]);
+
   const requestWallet = useCallback(
     async <T,>(payload: { method: string; params?: unknown[] }) => {
       if (!magic) {
@@ -339,6 +349,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       closeSignIn: () => setIsSignInOpen(false),
       errorCode,
       getDidToken,
+      getWalletProvider,
       isSignInOpen,
       magicReady,
       openSignIn: () => setIsSignInOpen(true),
@@ -353,6 +364,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       account,
       errorCode,
       getDidToken,
+      getWalletProvider,
       isSignInOpen,
       magicReady,
       requestWallet,
