@@ -45,7 +45,10 @@ export type ExpenseStatus =
 export type MemberRole = "owner" | "member";
 export type MemberJoinStatus = "invited" | "joined" | "removed";
 export type ConfirmationStatus = "pending" | "confirmed" | "disputed";
-export type AuthorizationMethod = "erc20_allowance" | "zerodev_session_key";
+export type AuthorizationMethod =
+  | "erc20_allowance"
+  | "zerodev_session_key"
+  | "zerodev_final_tab";
 export type TransactionStatus = "submitted" | "confirmed" | "failed";
 export type SettlementProposalStatus =
   | "draft"
@@ -57,19 +60,27 @@ export type SettlementProposalStatus =
 
 export type TabAuthorizationResponse = {
   allowanceTxHash: string | null;
+  authorizationAmountBaseUnits: string | null;
   authorizationMethod: AuthorizationMethod;
+  authorizationNonce: string | null;
+  authorizationTxHash: string | null;
   capBaseUnits: string;
+  confirmedBlock: string | null;
   createdAt: string;
   expiresAt: string;
   id: string;
   maxSingleSettlementBaseUnits: string;
   memberId: string;
+  proposalHash: string | null;
+  proposalId: string | null;
   revokedAt: string | null;
+  revocationTxHash: string | null;
   sessionKeyRef: string | null;
   settlementContractAddress: string;
   tabId: string;
   tokenAddress: string;
   updatedAt: string;
+  userOperationHash: string | null;
   walletAddress: string;
 };
 
@@ -155,6 +166,10 @@ export type SettlementProposalResponse = {
   proposalVersion: number;
   schemaVersion: number;
   settlementContractAddress: string;
+  registeredAt: string | null;
+  registrationTxHash: string | null;
+  cancellationTxHash: string | null;
+  onchainCancelledAt: string | null;
   status: SettlementProposalStatus;
   tabId: string;
   tabIdHash: string;

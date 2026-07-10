@@ -12,7 +12,13 @@ export type PaymasterPolicyStatus =
   | "available"
   | "rejected"
   | "misconfigured";
-export type UserOperationPurpose = "diagnostic_batch" | "account_initialization";
+export type UserOperationPurpose =
+  | "diagnostic_batch"
+  | "account_initialization"
+  | "final_tab_registration"
+  | "final_tab_authorization"
+  | "final_tab_revocation"
+  | "final_tab_cancellation";
 export type UserOperationStatus = "submitted" | "confirmed" | "failed" | "timed_out";
 
 export type SettlementAccountReadiness = {
