@@ -5,6 +5,7 @@ import { FiCreditCard } from "react-icons/fi";
 import { Card } from "@/components/ui/Card";
 import { ReceiptBlock } from "@/components/ui/ReceiptBlock";
 import { StatusChip } from "@/components/ui/StatusChip";
+import { SettlementAccountStatusRow } from "@/components/account/SettlementAccountStatusRow";
 import type { Account } from "@/lib/account/types";
 
 type WalletDetailsCardProps = {
@@ -34,6 +35,7 @@ export function WalletDetailsCard({ account, icon }: WalletDetailsCardProps) {
           <p className="break-all">{account.walletAddress}</p>
         </ReceiptBlock>
       </div>
+      <SettlementAccountStatusRow readiness={account.settlementAccount} />
     </Card>
   );
 }
