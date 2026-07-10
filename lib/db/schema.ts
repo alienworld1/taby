@@ -67,6 +67,33 @@ export const settlementTransactionStatusEnum = pgEnum("settlement_transaction_st
   "confirmed",
   "failed",
 ]);
+export const settlementAccountTypeEnum = pgEnum("settlement_account_type", [
+  "magic_eoa_7702",
+  "zerodev_kernel",
+]);
+export const delegationStatusEnum = pgEnum("delegation_status", [
+  "not_initialized",
+  "pending",
+  "ready",
+  "failed",
+  "fallback_required",
+]);
+export const paymasterPolicyStatusEnum = pgEnum("paymaster_policy_status", [
+  "unknown",
+  "available",
+  "rejected",
+  "misconfigured",
+]);
+export const userOperationPurposeEnum = pgEnum("user_operation_purpose", [
+  "diagnostic_batch",
+  "account_initialization",
+]);
+export const userOperationStatusEnum = pgEnum("user_operation_status", [
+  "submitted",
+  "confirmed",
+  "failed",
+  "timed_out",
+]);
 
 export const users = pgTable(
   "users",
@@ -87,6 +114,93 @@ export const users = pgTable(
 );
 
 export type User = typeof users.$inferSelect;
+
+export const userSettlementAccounts = pgTable(
+  "user_settlement_accounts",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id),
+    magicWalletAddress: text("magic_wallet_address").notNull(),
+    settlementAddress: text("settlement_address").notNull(),
+    accountType: settlementAccountTypeEnum("account_type").notNull(),
+    chainId: integer("chain_id").notNull(),
+    zeroDevProjectIdHash: text("zerodev_project_id_hash").notNull(),
+    kernelVersion: text("kernel_version").notNull(),
+    entryPointVersion: text("entry_point_version").notNull(),
+    paymasterPolicyStatus: paymasterPolicyStatusEnum("paymaster_policy_status")
+      .default("unknown")
+      .notNull(),
+    lastUserOperationHash: text("last_user_operation_hash"),
+    lastTransactionHash: text("last_transaction_hash"),
+    delegationStatus: delegationStatusEnum("delegation_status")
+      .default("not_initialized")
+      .notNull(),
+    delegationConfirmedAt: timestamp("delegation_confirmed_at", {
+      mode: "date",
+      withTimezone: true,
+    }),
+    configHash: text("config_hash").notNull(),
+    lastCheckedAt: timestamp("last_checked_at", { mode: "date", withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    lastErrorCode: text("last_error_code"),
+    lastErrorMessage: text("last_error_message"),
+    diagnostics: jsonb("diagnostics"),
+    createdAt: timestamp("created_at", { mode: "date", withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    updatedAt: timestamp("updated_at", { mode: "date", withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    index("user_settlement_accounts_status_idx").on(table.delegationStatus),
+    uniqueIndex("user_settlement_accounts_user_config_idx").on(
+      table.userId,
+      table.configHash,
+    ),
+  ],
+);
+
+export type UserSettlementAccount = typeof userSettlementAccounts.$inferSelect;
+
+export const userOperationRecords = pgTable(
+  "user_operation_records",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    userOperationHash: text("user_operation_hash").notNull(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id),
+    settlementAccountId: uuid("settlement_account_id").references(
+      () => userSettlementAccounts.id,
+    ),
+    purpose: userOperationPurposeEnum("purpose").notNull(),
+    status: userOperationStatusEnum("status").notNull(),
+    submittedAt: timestamp("submitted_at", { mode: "date", withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    confirmedAt: timestamp("confirmed_at", { mode: "date", withTimezone: true }),
+    transactionHash: text("transaction_hash"),
+    failureCode: text("failure_code"),
+    failureMessage: text("failure_message"),
+    createdAt: timestamp("created_at", { mode: "date", withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    updatedAt: timestamp("updated_at", { mode: "date", withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    index("user_operation_records_user_idx").on(table.userId),
+    index("user_operation_records_status_idx").on(table.status),
+    uniqueIndex("user_operation_records_hash_idx").on(table.userOperationHash),
+  ],
+);
+
+export type UserOperationRecord = typeof userOperationRecords.$inferSelect;
 
 export const tabs = pgTable(
   "tabs",
