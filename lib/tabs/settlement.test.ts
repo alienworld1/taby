@@ -5,7 +5,7 @@ import {
   type SettlementEngineInput,
   type SettlementEngineResult,
 } from "./settlement";
-import { buildProposalHashPayload, hashProposalPayload } from "./proposals";
+import { buildFinalTab, hashFinalTabPayload } from "./finalTab";
 
 const members = [
   member("a", "Alex"),
@@ -203,43 +203,60 @@ test("handles a realistic trip graph with dust, zero shares, and excluded expens
   assertSettlementInvariants(result);
 });
 
-test("builds the same proposal hash for equivalent canonical settlement payloads", () => {
-  const tokenAddress = "0x75faf114eafb1bdbe2f0316df893fd58ce46aa4d";
-  const result = mustCalculate({
-    expenses: [
-      { ...expense("coffee", "a", "24000000"), tokenAddress },
-      { ...expense("pending", "b", "1000000"), status: "pending", tokenAddress },
-    ],
-    members: members.slice(0, 2),
-    splits: [
-      split("coffee", "a", "12000000"),
-      split("coffee", "b", "12000000"),
-      split("pending", "b", "1000000"),
-    ],
-    tokenAddress,
-  });
-  const first = buildProposalHashPayload({
-    excludedExpenseIds: ["pending"],
-    includedExpenseIds: ["coffee"],
-    networkChainId: 421614,
-    settlement: result,
-    tabId: "tab",
-    tokenAddress: "0x75FAF114EAFB1BDbe2F0316DF893fd58CE46AA4d",
-  });
-  const second = buildProposalHashPayload({
-    excludedExpenseIds: ["pending"],
-    includedExpenseIds: ["coffee"],
-    networkChainId: 421614,
+test("builds ABI-compatible Final Tab hash vectors", () => {
+  const vector = finalTabVector();
+
+  assert.equal(
+    vector.finalTab.proposalHash,
+    "0xbce86c4312bb1677def3be989993ecbdaff3ee18966426fd0dbd4c0b5269a7cb",
+  );
+  assert.equal(
+    vector.finalTab.includedExpensesHash,
+    "0xacb371cd6d4dcd71a67a09d04888d4c6b37180b0bef96be428225fb69c9ce63b",
+  );
+  assert.equal(
+    vector.finalTab.excludedExpensesHash,
+    "0x92fd7ed3639a058a3940e1a80c61e19cc9edcc6401f18baa8fa45a113d1eddbf",
+  );
+  assert.equal(
+    vector.finalTab.transfersHash,
+    "0x203cb1d323e5c7e230ee43da6dfcfa508c4a7ddb11346d4c50b477b643008467",
+  );
+});
+
+test("Final Tab hash ignores presentation ordering but changes for material edits", () => {
+  const vector = finalTabVector();
+  const reordered = buildFinalTab({
+    ...vector.input,
+    excludedExpenses: [...vector.input.excludedExpenses].reverse(),
+    includedExpenses: [...vector.input.includedExpenses].reverse(),
+    members: [...vector.input.members].reverse(),
     settlement: {
-      ...result,
-      balances: [...result.balances].reverse(),
-      transfers: [...result.transfers].reverse(),
+      ...vector.input.settlement,
+      balances: [...vector.input.settlement.balances].reverse(),
+      transfers: [...vector.input.settlement.transfers].reverse(),
     },
-    tabId: "tab",
-    tokenAddress: "0x75faf114eafb1bdbe2f0316df893fd58ce46aa4d",
+    splits: [...vector.input.splits].reverse(),
+  });
+  const changed = buildFinalTab({
+    ...vector.input,
+    settlement: {
+      ...vector.input.settlement,
+      totalMovingBaseUnits: "14000001",
+      transfers: vector.input.settlement.transfers.map((transfer, index) =>
+        index === 0 ? { ...transfer, amountBaseUnits: "10000001" } : transfer,
+      ),
+    },
+  });
+  const changedVersion = buildFinalTab({
+    ...vector.input,
+    proposalVersion: vector.input.proposalVersion + 1,
   });
 
-  assert.equal(hashProposalPayload(first), hashProposalPayload(second));
+  assert.equal(reordered.proposalHash, vector.finalTab.proposalHash);
+  assert.notEqual(changed.proposalHash, vector.finalTab.proposalHash);
+  assert.notEqual(changedVersion.proposalHash, vector.finalTab.proposalHash);
+  assert.equal(hashFinalTabPayload(vector.finalTab.payload), vector.finalTab.proposalHash);
 });
 
 test("handles a complex reciprocal graph where many raw IOUs cancel out", () => {
@@ -508,6 +525,104 @@ function transferTriples(result: SettlementEngineResult) {
   ]);
 }
 
+function finalTabVector() {
+  const tokenAddress = "0x75faf114eafb1bdbe2f0316df893fd58ce46aa4d";
+  const includedExpenses = [
+    dbExpense(
+      "10000000-0000-4000-8000-000000000001",
+      "00000000-0000-4000-8000-000000000001",
+      "30000000",
+      tokenAddress,
+    ),
+    dbExpense(
+      "10000000-0000-4000-8000-000000000002",
+      "00000000-0000-4000-8000-000000000002",
+      "12000000",
+      tokenAddress,
+    ),
+  ];
+  const excludedExpenses = [
+    {
+      ...dbExpense(
+        "10000000-0000-4000-8000-000000000003",
+        "00000000-0000-4000-8000-000000000003",
+        "9000000",
+        tokenAddress,
+      ),
+      status: "pending" as const,
+    },
+  ];
+  const vectorMembers = [
+    dbMember(
+      "00000000-0000-4000-8000-000000000001",
+      "Alex",
+      "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "owner",
+    ),
+    dbMember(
+      "00000000-0000-4000-8000-000000000002",
+      "Bela",
+      "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "member",
+    ),
+    dbMember(
+      "00000000-0000-4000-8000-000000000003",
+      "Cy",
+      "0xcccccccccccccccccccccccccccccccccccccccc",
+      "member",
+    ),
+  ];
+  const vectorSplits = [
+    dbSplit(includedExpenses[0].id, vectorMembers[0].id, "10000000"),
+    dbSplit(includedExpenses[0].id, vectorMembers[1].id, "10000000"),
+    dbSplit(includedExpenses[0].id, vectorMembers[2].id, "10000000"),
+    dbSplit(includedExpenses[1].id, vectorMembers[0].id, "6000000"),
+    dbSplit(includedExpenses[1].id, vectorMembers[1].id, "6000000"),
+    dbSplit(excludedExpenses[0].id, vectorMembers[2].id, "9000000"),
+  ];
+  const settlement = mustCalculate({
+    expenses: includedExpenses.map((item) => ({
+      amountBaseUnits: item.amountBaseUnits.toString(),
+      id: item.id,
+      payerMemberId: item.payerMemberId,
+      status: item.status,
+      title: item.title,
+      tokenAddress: item.tokenAddress,
+    })),
+    members: vectorMembers.map((item) => ({
+      displayName: item.displayName,
+      id: item.id,
+      joinStatus: item.joinStatus,
+      walletAddress: item.walletAddress,
+    })),
+    splits: vectorSplits.map((item) => ({
+      expenseId: item.expenseId,
+      memberId: item.memberId,
+      shareBaseUnits: item.shareBaseUnits.toString(),
+    })),
+    tokenAddress,
+  });
+  const input = {
+    chainId: 421614,
+    coordinatorWalletAddress: vectorMembers[0].walletAddress!,
+    excludedExpenses,
+    expiresAt: new Date("2026-07-11T12:00:00.000Z"),
+    includedExpenses,
+    members: vectorMembers,
+    proposalVersion: 1,
+    settlement,
+    settlementContractAddress: "0x2222222222222222222222222222222222222222",
+    splits: vectorSplits,
+    tabId: "11111111-1111-4111-8111-111111111111",
+    tokenAddress,
+  };
+
+  return {
+    finalTab: buildFinalTab(input),
+    input,
+  };
+}
+
 function member(id: string, displayName: string) {
   return {
     displayName,
@@ -533,5 +648,57 @@ function split(expenseId: string, memberId: string, shareBaseUnits: string) {
     expenseId,
     memberId,
     shareBaseUnits,
+  };
+}
+
+function dbMember(
+  id: string,
+  displayName: string,
+  walletAddress: string,
+  role: "owner" | "member",
+) {
+  return {
+    createdAt: new Date("2026-07-10T12:00:00.000Z"),
+    displayName,
+    id,
+    joinStatus: "joined" as const,
+    readinessStatus: "not_ready" as const,
+    role,
+    tabId: "11111111-1111-4111-8111-111111111111",
+    updatedAt: new Date("2026-07-10T12:00:00.000Z"),
+    userId: null,
+    walletAddress,
+  };
+}
+
+function dbExpense(
+  id: string,
+  payerMemberId: string,
+  amountBaseUnits: string,
+  tokenAddress: string,
+) {
+  return {
+    amountBaseUnits: BigInt(amountBaseUnits),
+    createdAt: new Date("2026-07-10T12:00:00.000Z"),
+    createdByUserId: "99999999-9999-4999-8999-999999999999",
+    id,
+    note: null,
+    payerMemberId,
+    splitMethod: "custom" as const,
+    status: "confirmed" as const,
+    tabId: "11111111-1111-4111-8111-111111111111",
+    title: id,
+    tokenAddress,
+    updatedAt: new Date("2026-07-10T12:00:00.000Z"),
+  };
+}
+
+function dbSplit(expenseId: string, memberId: string, shareBaseUnits: string) {
+  return {
+    createdAt: new Date("2026-07-10T12:00:00.000Z"),
+    expenseId,
+    id: `${expenseId}:${memberId}`,
+    memberId,
+    shareBaseUnits: BigInt(shareBaseUnits),
   };
 }

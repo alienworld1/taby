@@ -80,6 +80,15 @@ contract TabySettlementTest is Test {
     address private creditorA = address(0xC1);
     address private creditorB = address(0xC2);
 
+    bytes32 private constant FINAL_TAB_VECTOR_HASH =
+        0xbce86c4312bb1677def3be989993ecbdaff3ee18966426fd0dbd4c0b5269a7cb;
+    bytes32 private constant FINAL_TAB_INCLUDED_HASH =
+        0xacb371cd6d4dcd71a67a09d04888d4c6b37180b0bef96be428225fb69c9ce63b;
+    bytes32 private constant FINAL_TAB_EXCLUDED_HASH =
+        0x92fd7ed3639a058a3940e1a80c61e19cc9edcc6401f18baa8fa45a113d1eddbf;
+    bytes32 private constant FINAL_TAB_TRANSFERS_HASH =
+        0x203cb1d323e5c7e230ee43da6dfcfa508c4a7ddb11346d4c50b477b643008467;
+
     function setUp() public {
         proposalAuthorizer = vm.addr(AUTHORER_PRIVATE_KEY);
         token = new MockUsdc();
@@ -94,6 +103,32 @@ contract TabySettlementTest is Test {
     function test_constructorRejectsZeroAuthorizer() public {
         vm.expectRevert(TabySettlement.ZeroProposalAuthorizer.selector);
         new TabySettlement(address(token), address(0));
+    }
+
+    function test_finalTabHashVectorMatchesTypeScript() public pure {
+        assertEq(_vectorProposalHash(4_000_000, 10_000_000, 1), FINAL_TAB_VECTOR_HASH);
+        assertEq(_vectorIncludedHash(0x75faf114eafb1BDbe2F0316DF893fd58CE46AA4d), FINAL_TAB_INCLUDED_HASH);
+        assertEq(_vectorExcludedHash(), FINAL_TAB_EXCLUDED_HASH);
+        assertEq(
+            _vectorTransfersHash(
+                4_000_000,
+                10_000_000,
+                0xaAaAaAaaAaAaAaaAaAAAAAAAAaaaAaAaAaaAaaAa,
+                0xbBbBBBBbbBBBbbbBbbBbbbbBBbBbbbbBbBbbBBbB,
+                0xCcCCccccCCCCcCCCCCCcCcCccCcCCCcCcccccccC
+            ),
+            FINAL_TAB_TRANSFERS_HASH
+        );
+    }
+
+    function test_finalTabHashVectorChangesForMaterialFields() public pure {
+        bytes32 proposalHash = _vectorProposalHash(4_000_000, 10_000_000, 1);
+        bytes32 changedAmount = _vectorProposalHash(4_000_001, 10_000_000, 1);
+        bytes32 changedVersion = _vectorProposalHash(4_000_000, 10_000_000, 2);
+
+        assertEq(proposalHash, FINAL_TAB_VECTOR_HASH);
+        assertNotEq(changedAmount, proposalHash);
+        assertNotEq(changedVersion, proposalHash);
     }
 
     function test_settleTransfersFundsAndEmitsSettlementEvent() public {
@@ -326,6 +361,119 @@ contract TabySettlementTest is Test {
 
         assertTrue(settlement.settledProposals(settlement.proposalKey(TAB_KEY, PROPOSAL_HASH)));
         assertEq(token.balanceOf(creditorA), transfers[0].amount);
+    }
+
+    function _vectorProposalHash(uint256 firstTransferAmount, uint256 secondTransferAmount, uint256 proposalVersion)
+        private
+        pure
+        returns (bytes32)
+    {
+        address coordinator = 0xaAaAaAaaAaAaAaaAaAAAAAAAAaaaAaAaAaaAaaAa;
+        address debtorBWallet = 0xbBbBBBBbbBBBbbbBbbBbbbbBBbBbbbbBbBbbBBbB;
+        address debtorCWallet = 0xCcCCccccCCCCcCCCCCCcCcCccCcCCCcCcccccccC;
+        address tokenAddress = 0x75faf114eafb1BDbe2F0316DF893fd58CE46AA4d;
+        address settlementContractAddress = 0x2222222222222222222222222222222222222222;
+        bytes32 tabIdHash = _idHash("11111111-1111-4111-8111-111111111111");
+
+        return keccak256(
+            abi.encode(
+                uint256(1),
+                tabIdHash,
+                keccak256(abi.encode(coordinator, tabIdHash)),
+                coordinator,
+                proposalVersion,
+                uint256(421614),
+                tokenAddress,
+                settlementContractAddress,
+                uint256(1_783_771_200),
+                _vectorIncludedHash(tokenAddress),
+                _vectorExcludedHash(),
+                _vectorTransfersHash(firstTransferAmount, secondTransferAmount, coordinator, debtorBWallet, debtorCWallet),
+                uint256(14_000_000)
+            )
+        );
+    }
+
+    function _vectorIncludedHash(address tokenAddress) private pure returns (bytes32) {
+        bytes32[] memory expenseHashes = new bytes32[](2);
+        bytes32[] memory firstSplits = new bytes32[](3);
+        bytes32[] memory secondSplits = new bytes32[](2);
+
+        firstSplits[0] = _splitHash("00000000-0000-4000-8000-000000000001", 10_000_000);
+        firstSplits[1] = _splitHash("00000000-0000-4000-8000-000000000002", 10_000_000);
+        firstSplits[2] = _splitHash("00000000-0000-4000-8000-000000000003", 10_000_000);
+        secondSplits[0] = _splitHash("00000000-0000-4000-8000-000000000001", 6_000_000);
+        secondSplits[1] = _splitHash("00000000-0000-4000-8000-000000000002", 6_000_000);
+
+        expenseHashes[0] = keccak256(
+            abi.encode(
+                _idHash("10000000-0000-4000-8000-000000000001"),
+                _idHash("00000000-0000-4000-8000-000000000001"),
+                uint256(30_000_000),
+                tokenAddress,
+                keccak256(abi.encode(firstSplits))
+            )
+        );
+        expenseHashes[1] = keccak256(
+            abi.encode(
+                _idHash("10000000-0000-4000-8000-000000000002"),
+                _idHash("00000000-0000-4000-8000-000000000002"),
+                uint256(12_000_000),
+                tokenAddress,
+                keccak256(abi.encode(secondSplits))
+            )
+        );
+
+        return keccak256(abi.encode(expenseHashes));
+    }
+
+    function _vectorExcludedHash() private pure returns (bytes32) {
+        bytes32[] memory expenseHashes = new bytes32[](1);
+        expenseHashes[0] = keccak256(
+            abi.encode(_idHash("10000000-0000-4000-8000-000000000003"), _idHash("pending"))
+        );
+
+        return keccak256(abi.encode(expenseHashes));
+    }
+
+    function _vectorTransfersHash(
+        uint256 firstTransferAmount,
+        uint256 secondTransferAmount,
+        address coordinator,
+        address debtorBWallet,
+        address debtorCWallet
+    ) private pure returns (bytes32) {
+        bytes32[] memory transferHashes = new bytes32[](2);
+        transferHashes[0] = keccak256(
+            abi.encode(
+                _idHash("00000000-0000-4000-8000-000000000002"),
+                _idHash("00000000-0000-4000-8000-000000000001"),
+                firstTransferAmount,
+                debtorBWallet,
+                coordinator,
+                uint256(0)
+            )
+        );
+        transferHashes[1] = keccak256(
+            abi.encode(
+                _idHash("00000000-0000-4000-8000-000000000003"),
+                _idHash("00000000-0000-4000-8000-000000000001"),
+                secondTransferAmount,
+                debtorCWallet,
+                coordinator,
+                uint256(1)
+            )
+        );
+
+        return keccak256(abi.encode(transferHashes));
+    }
+
+    function _splitHash(string memory memberId, uint256 shareBaseUnits) private pure returns (bytes32) {
+        return keccak256(abi.encode(_idHash(memberId), shareBaseUnits));
+    }
+
+    function _idHash(string memory value) private pure returns (bytes32) {
+        return keccak256(bytes(value));
     }
 
     function _oneTransfer() private view returns (TabySettlement.Transfer[] memory transfers) {
