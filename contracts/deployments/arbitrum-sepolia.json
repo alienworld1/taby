@@ -1,0 +1,11 @@
+{
+  "network": "arbitrum-sepolia",
+  "chainId": 421614,
+  "contractName": "TabySettlement",
+  "address": "0xa5E8c0Bf7b2caf0F9A779D1B32640DC88AC258A2",
+  "supportedToken": "0x75faf114eafb1BDbe2F0316DF893fd58CE46AA4d",
+  "proposalAuthorizer": "0x6Bee0885A5d7c621215AD773a8c692a1bD16Aa60",
+  "deployer": "0x6Bee0885A5d7c621215AD773a8c692a1bD16Aa60",
+  "txHash": "0x31d30f8f0ee8b6aa8f066cf5ab59f2d73e8efc70b42cafe28deb789fce202014",
+  "deployedAt": "2026-07-07T11:56:55.018Z"
+}
