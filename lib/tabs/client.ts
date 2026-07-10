@@ -55,6 +55,27 @@ export type RemoveExpenseResponse = {
 
 export type ProposalMutationResponse = SettlementProposalMutationResponse;
 
+export type PreparedSettlementCall = {
+  data: `0x${string}`;
+  to: `0x${string}`;
+  value: string;
+};
+
+export type PreparedFinalTabAction = {
+  calls: PreparedSettlementCall[];
+  expectedAmountBaseUnits?: string;
+  expiresAt?: string;
+  expiresAtUnixSeconds?: string;
+  nonce?: string;
+  proposal?: SettlementProposalMutationResponse["proposal"];
+  proposalHash: string;
+  proposalId?: string;
+  settlementContractAddress: string;
+  tabKey: string;
+  tokenAddress?: string;
+  walletAddress?: string;
+};
+
 export type AuthorizationMutationResponse = {
   activity: ActivityEventResponse;
   authorization: TabAuthorizationResponse;
@@ -152,6 +173,13 @@ export function toTabClientError(error: unknown): TabClientError {
         "message" in error && typeof error.message === "string"
           ? error.message
           : tabErrorMessage(error.code),
+    };
+  }
+
+  if (error instanceof Error && error.message.trim().length > 0) {
+    return {
+      code: "database_unavailable",
+      message: error.message,
     };
   }
 
@@ -253,9 +281,20 @@ export function createProposalRequest(didToken: string, tabId: string) {
   });
 }
 
-export function lockProposalRequest(didToken: string, proposalId: string) {
+export function prepareLockProposalRequest(didToken: string, proposalId: string) {
+  return requestTaby<PreparedFinalTabAction>(`/api/proposals/${proposalId}/lock`, didToken, {
+    body: JSON.stringify({ action: "prepare" }),
+    method: "POST",
+  });
+}
+
+export function confirmLockProposalRequest(
+  didToken: string,
+  proposalId: string,
+  input: { transactionHash: string; userOperationHash: string },
+) {
   return requestTaby<ProposalMutationResponse>(`/api/proposals/${proposalId}/lock`, didToken, {
-    body: JSON.stringify({}),
+    body: JSON.stringify({ action: "confirm", ...input }),
     method: "POST",
   });
 }
@@ -269,6 +308,24 @@ export function cancelProposalRequest(didToken: string, proposalId: string) {
       method: "POST",
     },
   );
+}
+
+export function prepareCancelProposalRequest(didToken: string, proposalId: string) {
+  return requestTaby<PreparedFinalTabAction>(`/api/proposals/${proposalId}/cancel`, didToken, {
+    body: JSON.stringify({ action: "prepare" }),
+    method: "POST",
+  });
+}
+
+export function confirmCancelProposalRequest(
+  didToken: string,
+  proposalId: string,
+  input: { transactionHash: string; userOperationHash: string },
+) {
+  return requestTaby<ProposalMutationResponse>(`/api/proposals/${proposalId}/cancel`, didToken, {
+    body: JSON.stringify({ action: "confirm", ...input }),
+    method: "POST",
+  });
 }
 
 export function previewProposalRequest(
@@ -286,15 +343,14 @@ export function recordAuthorizationRequest(
   didToken: string,
   tabId: string,
   input: {
-    allowanceTxHash: string;
-    authorizationMethod: "erc20_allowance";
-    capBaseUnits: string;
-    expiresAt: string;
-    maxSingleSettlementBaseUnits: string;
+    action: "confirm";
+    authorizationNonce: string;
+    exactAmountBaseUnits: string;
     memberId: string;
-    settlementContractAddress: string;
-    tokenAddress: string;
-    walletAddress: string;
+    proposalHash: string;
+    proposalId: string;
+    transactionHash: string;
+    userOperationHash: string;
   },
 ) {
   return requestTaby<AuthorizationMutationResponse>(
@@ -307,16 +363,46 @@ export function recordAuthorizationRequest(
   );
 }
 
+export function prepareAuthorizationRequest(
+  didToken: string,
+  tabId: string,
+  input: {
+    memberId: string;
+    proposalHash: string;
+    proposalId: string;
+  },
+) {
+  return requestTaby<PreparedFinalTabAction>(
+    `/api/tabs/${tabId}/authorizations`,
+    didToken,
+    {
+      body: JSON.stringify({ action: "prepare", ...input }),
+      method: "POST",
+    },
+  );
+}
+
 export function revokeAuthorizationRequest(
   didToken: string,
   authorizationId: string,
-  input: { revokeTxHash?: string | null },
+  input: { action: "confirm"; transactionHash: string; userOperationHash: string },
 ) {
   return requestTaby<AuthorizationMutationResponse>(
     `/api/authorizations/${authorizationId}/revoke`,
     didToken,
     {
       body: JSON.stringify(input),
+      method: "POST",
+    },
+  );
+}
+
+export function prepareRevokeAuthorizationRequest(didToken: string, authorizationId: string) {
+  return requestTaby<PreparedFinalTabAction>(
+    `/api/authorizations/${authorizationId}/revoke`,
+    didToken,
+    {
+      body: JSON.stringify({ action: "prepare" }),
       method: "POST",
     },
   );
