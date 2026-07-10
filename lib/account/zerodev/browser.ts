@@ -35,6 +35,12 @@ type SettlementAccountClient = {
   settlementAddress: string;
 };
 
+export type SettlementEncodedCall = {
+  data: `0x${string}`;
+  to: `0x${string}`;
+  value?: bigint | number | string;
+};
+
 export async function createSettlementAccountClient({
   accountType,
   didToken,
@@ -141,6 +147,72 @@ export async function sendDiagnosticBatch(
     transactionHash: receipt.receipt.transactionHash,
     userOperationHash,
   };
+}
+
+export async function sendSettlementBatch(
+  kernelClient: SettlementAccountClient["kernelClient"],
+  calls: SettlementEncodedCall[],
+  onSubmitted?: (userOperationHash: string) => Promise<void> | void,
+) {
+  if (!kernelClient.account) {
+    throw new Error("account_unavailable");
+  }
+
+  let userOperationHash: `0x${string}`;
+
+  try {
+    userOperationHash = await kernelClient.sendUserOperation({
+      callData: await kernelClient.account.encodeCalls(
+        calls.map((call) => ({
+          data: call.data,
+          to: call.to,
+          value: BigInt(call.value ?? 0),
+        })),
+      ),
+    });
+  } catch (error) {
+    throw normalizeSettlementBatchError(error);
+  }
+
+  await onSubmitted?.(userOperationHash);
+
+  let receipt: Awaited<ReturnType<typeof kernelClient.waitForUserOperationReceipt>>;
+
+  try {
+    receipt = await kernelClient.waitForUserOperationReceipt({
+      hash: userOperationHash,
+      timeout: 90_000,
+    });
+  } catch (error) {
+    throw normalizeSettlementBatchError(error);
+  }
+
+  return {
+    transactionHash: receipt.receipt.transactionHash,
+    userOperationHash,
+  };
+}
+
+function normalizeSettlementBatchError(error: unknown) {
+  const message =
+    error && typeof error === "object" && "message" in error && typeof error.message === "string"
+      ? error.message
+      : "";
+  const revertData = message.match(/0x[a-fA-F0-9]{8,}/)?.[0] ?? "";
+  const selector = revertData.slice(0, 10).toLowerCase();
+  const normalized = new Error(
+    selector === "0xdb111a96"
+      ? "This Final Tab is no longer active onchain. Refresh status."
+      : selector === "0x9f4b444f"
+        ? "This Final Tab is already registered onchain. Refresh status."
+        : /revert|execution|simulation/i.test(message)
+      ? "Approval did not go through. Nothing changed. Try again."
+      : /sponsor|paymaster|gas/i.test(message)
+        ? "Gas sponsorship is not available right now. Try again in a moment."
+        : "We could not confirm the secure settlement request. Try again.",
+  );
+
+  return normalized;
 }
 
 async function createFallbackKernelAccount(input: {
