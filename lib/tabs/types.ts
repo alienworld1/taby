@@ -475,8 +475,10 @@ export type SettlementProposalMutationResponse = {
 
 export type TabSummaryResponse = {
   currentMember: TabMemberResponse | null;
+  nextAction: string | null;
   memberCount: number;
   ownerDisplayName: string | null;
+  presentationState: "needs_review" | "awaiting_approval" | "ready_to_settle" | "settled" | null;
   tab: TabResponse;
 };
 

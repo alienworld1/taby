@@ -980,7 +980,7 @@ export async function getCurrentUserTabs(input: {
       return { data: [], ok: true };
     }
 
-    const [tabRows, memberCountRows, ownerRows] = await Promise.all([
+    const [tabRows, memberCountRows, ownerRows, proposalRows, memberRows, authorizationRows] = await Promise.all([
       db.select().from(tabs).where(inArray(tabs.id, tabIds)).orderBy(desc(tabs.updatedAt)),
       db
         .select({
@@ -1000,6 +1000,16 @@ export async function getCurrentUserTabs(input: {
             ne(tabMembers.joinStatus, "removed"),
           ),
         ),
+      db
+        .select()
+        .from(settlementProposals)
+        .where(inArray(settlementProposals.tabId, tabIds))
+        .orderBy(
+          sql`case when ${settlementProposals.status} = 'executed' then 0 when ${settlementProposals.status} = 'locked' then 1 else 2 end`,
+          desc(settlementProposals.createdAt),
+        ),
+      db.select().from(tabMembers).where(and(inArray(tabMembers.tabId, tabIds), ne(tabMembers.joinStatus, "removed"))),
+      db.select().from(tabAuthorizations).where(inArray(tabAuthorizations.tabId, tabIds)),
     ]);
     const currentMemberByTabId = new Map(
       currentMemberRows.map((member) => [member.tabId, member]),
@@ -1009,15 +1019,81 @@ export async function getCurrentUserTabs(input: {
     );
     const ownerByTabId = new Map(ownerRows.map((member) => [member.tabId, member]));
 
+    const proposalByTabId = new Map<string, SettlementProposal>();
+    for (const proposal of proposalRows) {
+      if (!proposalByTabId.has(proposal.tabId)) proposalByTabId.set(proposal.tabId, proposal);
+    }
+    const attempts = await Promise.all(
+      [...proposalByTabId.values()].map(async (proposal) => [proposal.id, await latestSettlementAttempt(proposal.id)] as const),
+    );
+    const attemptByProposalId = new Map(attempts);
+    const membersByTabId = new Map<string, TabMember[]>();
+    for (const member of memberRows) {
+      membersByTabId.set(member.tabId, [...(membersByTabId.get(member.tabId) ?? []), member]);
+    }
+    const authorizationsByTabId = new Map<string, TabAuthorization[]>();
+    for (const authorization of authorizationRows) {
+      authorizationsByTabId.set(authorization.tabId, [
+        ...(authorizationsByTabId.get(authorization.tabId) ?? []),
+        authorization,
+      ]);
+    }
+    const readinessByProposalId = new Map(
+      await Promise.all(
+        [...proposalByTabId.values()].map(async (proposal) => [
+          proposal.id,
+          await buildAuthorizationReadiness({
+            authorizations: authorizationsByTabId.get(proposal.tabId) ?? [],
+            members: membersByTabId.get(proposal.tabId) ?? [],
+            proposal: proposalDto(proposal),
+            settlementContractAddress: proposal.settlementContractAddress,
+          }),
+        ] as const),
+      ),
+    );
+
     return {
-      data: tabRows.map((tab) => ({
+      data: tabRows.map((tab) => {
+        const proposal = proposalByTabId.get(tab.id);
+        const attempt = proposal ? attemptByProposalId.get(proposal.id) : null;
+        const proposalExpired = proposal ? proposal.expiresAt.getTime() <= Date.now() : false;
+        const attemptPending = attempt && ["created", "submitted", "userop_submitted", "included", "unknown"].includes(attempt.status);
+        const readinessBlocked = proposal
+          ? (readinessByProposalId.get(proposal.id) ?? []).some((item) => item.blocksSettlement)
+          : true;
+        const presentationState =
+          tab.status === "settled" || proposal?.status === "executed" || attempt?.status === "confirmed"
+            ? "settled"
+            : proposal?.status === "locked" && !proposalExpired && !attemptPending
+              ? readinessBlocked
+                ? "awaiting_approval"
+                : "ready_to_settle"
+              : tab.status !== "cancelled"
+                ? "needs_review"
+                : null;
+        const nextAction =
+          presentationState === "settled"
+            ? "View receipt"
+            : presentationState === "ready_to_settle"
+              ? "Review settlement"
+              : presentationState === "awaiting_approval"
+              ? proposalExpired
+                ? "Create a fresh Final Tab"
+                : "Waiting for the group to approve this Final Tab."
+              : (memberCountByTabId.get(tab.id) ?? 0) < 2
+                ? "Invite members"
+                : "Review shared expenses";
+        return {
         currentMember: currentMemberByTabId.get(tab.id)
           ? memberDto(currentMemberByTabId.get(tab.id) as TabMember)
           : null,
         memberCount: memberCountByTabId.get(tab.id) ?? 0,
+        nextAction,
         ownerDisplayName: ownerByTabId.get(tab.id)?.displayName ?? null,
+        presentationState,
         tab: tabDto(tab),
-      })),
+        };
+      }),
       ok: true,
     };
   } catch {
