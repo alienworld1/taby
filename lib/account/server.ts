@@ -492,6 +492,10 @@ export async function upsertUserOperationRecord(input: {
     return { code: "account_unavailable" as AccountErrorCode, ok: false, status: 422 };
   }
 
+  if (purpose === "final_tab_settlement" && status !== "submitted") {
+    return { code: "account_unavailable" as AccountErrorCode, ok: false, status: 422 };
+  }
+
   const now = new Date();
   const confirmedAt = status === "confirmed" ? now : null;
 
@@ -551,7 +555,15 @@ function parsePaymasterStatus(value: unknown): PaymasterPolicyStatus {
 }
 
 function parseOperationPurpose(value: unknown): UserOperationPurpose | null {
-  return value === "diagnostic_batch" || value === "account_initialization" ? value : null;
+  return value === "diagnostic_batch" ||
+    value === "account_initialization" ||
+    value === "final_tab_registration" ||
+    value === "final_tab_authorization" ||
+    value === "final_tab_revocation" ||
+    value === "final_tab_cancellation" ||
+    value === "final_tab_settlement"
+    ? value
+    : null;
 }
 
 function parseOperationStatus(value: unknown): UserOperationStatus | null {

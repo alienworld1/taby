@@ -18,7 +18,8 @@ export type UserOperationPurpose =
   | "final_tab_registration"
   | "final_tab_authorization"
   | "final_tab_revocation"
-  | "final_tab_cancellation";
+  | "final_tab_cancellation"
+  | "final_tab_settlement";
 export type UserOperationStatus = "submitted" | "confirmed" | "failed" | "timed_out";
 
 export type SettlementAccountReadiness = {
