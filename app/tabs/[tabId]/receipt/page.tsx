@@ -11,7 +11,7 @@ export async function generateMetadata({ params }: ReceiptPageProps) {
   await params;
 
   return {
-    title: "Final Tab receipt",
+    title: "Final Tab settled",
   };
 }
 
@@ -19,7 +19,7 @@ export default async function ReceiptPage({ params }: ReceiptPageProps) {
   const { tabId } = await params;
 
   return (
-    <AppShell eyebrow="Shared receipt" title="Final Tab receipt">
+    <AppShell eyebrow="Shared receipt" title="Final Tab settled">
       <FinalTabReceiptContent tabId={tabId} />
     </AppShell>
   );

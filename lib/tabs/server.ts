@@ -43,6 +43,15 @@ import {
   type UserSettlementAccount,
 } from "@/lib/db/schema";
 import { proposalDto } from "@/lib/tabs/proposals";
+import {
+  canViewFinalTabReceipt,
+  parseReceiptSnapshots,
+  receiptLifecycleState,
+  receiptStateMessage,
+  receiptVerificationPassed,
+  shortReceiptId,
+  validReceiptAuthorizations,
+} from "@/lib/tabs/receipt";
 import { buildFinalTab } from "@/lib/tabs/finalTab";
 import {
   encodeAuthorizeFinalTabBatch,
@@ -1127,150 +1136,6 @@ export async function getTabDetail(input: {
   }
 }
 
-type ReceiptIncludedSnapshot = {
-  amountBaseUnits: string;
-  expenseId: string;
-};
-
-type ReceiptExcludedSnapshot = {
-  expenseId: string;
-  status: string;
-};
-
-type ReceiptTransferSnapshot = {
-  amountBaseUnits: string;
-  fromMemberId: string;
-  id?: string;
-  toMemberId: string;
-};
-
-type ReceiptNetBalanceSnapshot = {
-  direction?: string;
-  displayName?: string;
-  memberId: string;
-  netBaseUnits: string;
-};
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return Boolean(value && typeof value === "object" && !Array.isArray(value));
-}
-
-function receiptIncludedSnapshots(value: unknown): ReceiptIncludedSnapshot[] {
-  if (!Array.isArray(value)) {
-    return [];
-  }
-
-  return value.flatMap((expense) =>
-    isRecord(expense) &&
-    typeof expense.expenseId === "string" &&
-    typeof expense.amountBaseUnits === "string"
-      ? [{ amountBaseUnits: expense.amountBaseUnits, expenseId: expense.expenseId }]
-      : [],
-  );
-}
-
-function receiptExcludedSnapshots(value: unknown): ReceiptExcludedSnapshot[] {
-  if (!Array.isArray(value)) {
-    return [];
-  }
-
-  return value.flatMap((expense) =>
-    isRecord(expense) && typeof expense.expenseId === "string"
-      ? [
-          {
-            expenseId: expense.expenseId,
-            status: typeof expense.status === "string" ? expense.status : "disputed",
-          },
-        ]
-      : [],
-  );
-}
-
-function receiptTransferSnapshots(value: unknown): ReceiptTransferSnapshot[] {
-  if (!Array.isArray(value)) {
-    return [];
-  }
-
-  return value.flatMap((transfer, index) =>
-    isRecord(transfer) &&
-    typeof transfer.fromMemberId === "string" &&
-    typeof transfer.toMemberId === "string" &&
-    typeof transfer.amountBaseUnits === "string"
-      ? [
-          {
-            amountBaseUnits: transfer.amountBaseUnits,
-            fromMemberId: transfer.fromMemberId,
-            id: typeof transfer.id === "string" ? transfer.id : `transfer-${index}`,
-            toMemberId: transfer.toMemberId,
-          },
-        ]
-      : [],
-  );
-}
-
-function receiptNetBalanceSnapshots(value: unknown): ReceiptNetBalanceSnapshot[] {
-  if (!Array.isArray(value)) {
-    return [];
-  }
-
-  return value.flatMap((balance) =>
-    isRecord(balance) &&
-    typeof balance.memberId === "string" &&
-    typeof balance.netBaseUnits === "string"
-      ? [
-          {
-            direction: typeof balance.direction === "string" ? balance.direction : undefined,
-            displayName: typeof balance.displayName === "string" ? balance.displayName : undefined,
-            memberId: balance.memberId,
-            netBaseUnits: balance.netBaseUnits,
-          },
-        ]
-      : [],
-  );
-}
-
-function shortId(value: string) {
-  return value.length > 8 ? value.slice(0, 8) : value;
-}
-
-function equalText(left: string | null | undefined, right: string | null | undefined) {
-  return Boolean(left && right && left.toLowerCase() === right.toLowerCase());
-}
-
-function receiptLifecycleState(
-  attempt: SettlementTransaction | null,
-): Exclude<FinalTabReceiptResponse["status"], "confirmed"> {
-  if (!attempt) {
-    return "empty";
-  }
-
-  if (attempt.status === "failed" || attempt.status === "reverted") {
-    return "failed";
-  }
-
-  if (["submitted", "userop_submitted", "included", "unknown", "created"].includes(attempt.status)) {
-    return attempt.txHash && attempt.status === "unknown" ? "reconciliation_needed" : "pending";
-  }
-
-  return "reconciliation_needed";
-}
-
-function receiptStateMessage(status: Exclude<FinalTabReceiptResponse["status"], "confirmed">) {
-  switch (status) {
-    case "pending":
-      return "Settlement is still confirming. Check the tab for the latest status.";
-    case "failed":
-      return "Settlement did not go through. Nothing moved.";
-    case "reconciliation_needed":
-      return "We couldn't verify this receipt yet. Refresh status from the tab.";
-    case "inaccessible":
-      return "We couldn't find that receipt.";
-    case "empty":
-    default:
-      return "No receipt yet. Settle the Final Tab first.";
-  }
-}
-
 export async function getFinalTabReceipt(input: {
   didToken: unknown;
   tabId: unknown;
@@ -1292,7 +1157,7 @@ export async function getFinalTabReceipt(input: {
     return access;
   }
 
-  if (!access.data.isOwner && access.data.currentMember?.joinStatus !== "joined") {
+  if (!canViewFinalTabReceipt(access.data)) {
     return fail("not_found", 404);
   }
 
@@ -1337,41 +1202,55 @@ export async function getFinalTabReceipt(input: {
     }
 
     const expectedContractAddress = getSettlementContractAddress();
-    const transferSnapshots = receiptTransferSnapshots(proposal.transfersJson);
-    const includedSnapshots = receiptIncludedSnapshots(
-      isRecord(proposal.canonicalPayloadJson)
-        ? proposal.canonicalPayloadJson.includedExpenses
-        : [],
-    );
-    const excludedSnapshots = receiptExcludedSnapshots(
-      isRecord(proposal.canonicalPayloadJson)
-        ? proposal.canonicalPayloadJson.excludedExpenses
-        : [],
-    );
-    const verificationPassed =
-      access.data.tab.status === "settled" &&
-      proposal.status === "executed" &&
-      confirmedAttempt.status === "confirmed" &&
-      Boolean(proposal.executedAt) &&
-      Boolean(confirmedAttempt.txHash) &&
-      Boolean(confirmedAttempt.confirmedBlockNumber) &&
-      confirmedAttempt.eventName === "FinalTabSettled" &&
-      equalText(confirmedAttempt.eventProposalHash, proposal.proposalHash) &&
-      equalText(confirmedAttempt.eventTabKey, proposal.tabKey) &&
-      equalText(confirmedAttempt.eventTransfersHash, proposal.transfersHash) &&
-      confirmedAttempt.eventTotalAmountBaseUnits?.toString() ===
-        proposal.totalAmountBaseUnits.toString() &&
-      confirmedAttempt.eventTransferCount === transferSnapshots.length &&
-      proposal.chainId === TABY_CHAIN_ID &&
-      access.data.tab.networkChainId === TABY_CHAIN_ID &&
-      confirmedAttempt.chainId === TABY_CHAIN_ID &&
-      equalText(proposal.tokenAddress, TABY_USDC_ADDRESS) &&
-      equalText(access.data.tab.tokenAddress, TABY_USDC_ADDRESS) &&
-      equalText(confirmedAttempt.tokenAddress, TABY_USDC_ADDRESS) &&
-      equalText(proposal.settlementContractAddress, expectedContractAddress) &&
-      equalText(confirmedAttempt.settlementContractAddress, expectedContractAddress);
+    const receiptSnapshots = parseReceiptSnapshots({
+      canonicalPayloadJson: proposal.canonicalPayloadJson,
+      excludedExpenseIds: proposal.excludedExpenseIds,
+      includedExpenseIds: proposal.includedExpenseIds,
+      netBalancesJson: proposal.netBalancesJson,
+      transfersJson: proposal.transfersJson,
+    });
+
+    if (!receiptSnapshots.ok) {
+      return {
+        data: {
+          message: receiptStateMessage("reconciliation_needed"),
+          status: "reconciliation_needed",
+          tabId,
+        },
+        ok: true,
+      };
+    }
+
+    const {
+      excludedSnapshots,
+      includedSnapshots,
+      netBalances,
+      transferSnapshots,
+    } = receiptSnapshots;
+    const verificationPassed = receiptVerificationPassed({
+      expectedChainId: TABY_CHAIN_ID,
+      expectedSettlementContractAddress: expectedContractAddress,
+      expectedTokenAddress: TABY_USDC_ADDRESS,
+      proposal,
+      tab: access.data.tab,
+      transaction: confirmedAttempt,
+      transferCount: transferSnapshots.length,
+    });
 
     if (!verificationPassed) {
+      return {
+        data: {
+          message: receiptStateMessage("reconciliation_needed"),
+          status: "reconciliation_needed",
+          tabId,
+        },
+        ok: true,
+      };
+    }
+
+    const proposalExecutedAt = proposal.executedAt;
+
+    if (!proposalExecutedAt) {
       return {
         data: {
           message: receiptStateMessage("reconciliation_needed"),
@@ -1417,7 +1296,7 @@ export async function getFinalTabReceipt(input: {
         .map((confirmation) => [confirmation.expenseId, confirmation.reason as string]),
     );
     const memberName = (memberId: string) =>
-      memberById.get(memberId)?.displayName ?? `Member ${shortId(memberId)}`;
+      memberById.get(memberId)?.displayName ?? `Member ${shortReceiptId(memberId)}`;
     const memberWallet = (memberId: string) => memberById.get(memberId)?.walletAddress ?? null;
     const includedExpenses = includedSnapshots.map((snapshot) => {
       const row = includedRowById.get(snapshot.expenseId);
@@ -1427,37 +1306,35 @@ export async function getFinalTabReceipt(input: {
         id: snapshot.expenseId,
         note: row?.note ?? null,
         status: row?.status ?? "settled",
-        title: row?.title ?? `Expense ${shortId(snapshot.expenseId)}`,
+        title: row?.title ?? `Expense ${shortReceiptId(snapshot.expenseId)}`,
       };
     });
     const excludedExpenses = excludedSnapshots.map((snapshot) => {
       const row = excludedRowById.get(snapshot.expenseId);
 
       return {
-        amountBaseUnits: row?.amountBaseUnits.toString() ?? "0",
+        amountBaseUnits: null,
         id: snapshot.expenseId,
         note: disputeReasonByExpenseId.get(snapshot.expenseId) ?? row?.note ?? null,
         status: snapshot.status,
-        title: row?.title ?? `Expense ${shortId(snapshot.expenseId)}`,
+        title: row?.title ?? `Expense ${shortReceiptId(snapshot.expenseId)}`,
       };
     });
     const includedExpenseTotalBaseUnits = includedSnapshots
       .reduce((sum, expense) => sum + BigInt(expense.amountBaseUnits), BigInt(0))
       .toString();
     const debtorMemberIds = new Set(transferSnapshots.map((transfer) => transfer.fromMemberId));
-    const activeAuthorizations = authorizationRows.filter(
-      (authorization) =>
-        !authorization.revokedAt &&
-        debtorMemberIds.has(authorization.memberId) &&
-        authorization.proposalHash?.toLowerCase() === proposal.proposalHash.toLowerCase(),
-    );
+    const activeAuthorizations = validReceiptAuthorizations({
+      authorizationRows,
+      proposalExecutedAt,
+      proposalHash: proposal.proposalHash,
+      transfers: transferSnapshots,
+    }).filter((authorization) => debtorMemberIds.has(authorization.memberId));
     const authorizedDebtorIds = [...new Set(activeAuthorizations.map((authorization) => authorization.memberId))];
     const authorizationExpiryUsed =
       activeAuthorizations
         .map((authorization) => authorization.expiresAt)
         .sort((a, b) => a.getTime() - b.getTime())[0] ?? proposal.expiresAt;
-    const netBalances = receiptNetBalanceSnapshots(proposal.netBalancesJson);
-
     return {
       data: {
         excludedExpenseCount: excludedSnapshots.length,

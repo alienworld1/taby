@@ -400,7 +400,7 @@ export type FinalTabReceiptLifecycleStatus =
   | "inaccessible";
 
 export type FinalTabReceiptExpense = {
-  amountBaseUnits: string;
+  amountBaseUnits: string | null;
   id: string;
   note: string | null;
   status: ExpenseStatus | string;

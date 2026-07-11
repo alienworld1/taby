@@ -11,27 +11,40 @@ type ReceiptCopyButtonProps = {
 
 export function ReceiptCopyButton({ label, value }: ReceiptCopyButtonProps) {
   const [copied, setCopied] = useState(false);
+  const [copying, setCopying] = useState(false);
+  const [failed, setFailed] = useState(false);
 
   async function handleCopy() {
-    if (!value || copied) {
+    if (!value || copied || copying) {
       return;
     }
 
-    await navigator.clipboard.writeText(value);
-    setCopied(true);
-    window.setTimeout(() => setCopied(false), 1400);
+    setCopying(true);
+    setFailed(false);
+
+    try {
+      await navigator.clipboard.writeText(value);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1400);
+    } catch {
+      setFailed(true);
+      window.setTimeout(() => setFailed(false), 1800);
+    } finally {
+      setCopying(false);
+    }
   }
 
   return (
     <Button
       aria-label={`Copy ${label}`}
-      disabled={!value || copied}
+      disabled={!value || copied || copying}
       icon={copied ? <FiCheck aria-hidden="true" /> : <FiCopy aria-hidden="true" />}
+      loading={copying}
       onClick={handleCopy}
       size="sm"
       variant="secondary"
     >
-      {copied ? "Copied" : "Copy"}
+      {copied ? "Copied" : failed ? "Try again" : "Copy"}
     </Button>
   );
 }
