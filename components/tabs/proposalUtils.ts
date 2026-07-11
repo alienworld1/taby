@@ -184,6 +184,16 @@ export function buildProposalBlockers(input: {
           severity: blocker.severity,
         });
       }
+    } else if (proposal?.status === "locked") {
+      blockers.push({
+        blocksCreate: false,
+        blocksFutureSettlement: true,
+        blocksLock: false,
+        id: `authorization-checking-${debtorMemberId}`,
+        kind: "missing_authorization",
+        message: `${member?.displayName ?? "A member"}'s approval is still checking.`,
+        severity: "warning",
+      });
     } else if (!authorization) {
       blockers.push({
         blocksCreate: false,
@@ -191,7 +201,7 @@ export function buildProposalBlockers(input: {
         blocksLock: false,
         id: `authorization-${debtorMemberId}`,
         kind: "missing_authorization",
-        message: `${member?.displayName ?? "A member"} still needs to authorize their share.`,
+        message: `${member?.displayName ?? "A member"} still needs to approve their share.`,
         severity: "warning",
       });
     } else if (authorization.revokedAt) {
@@ -214,7 +224,7 @@ export function buildProposalBlockers(input: {
         blocksLock: false,
         id: `authorization-expired-${debtorMemberId}`,
         kind: "expired_authorization",
-        message: `${member?.displayName ?? "A member"} needs to authorize again because their permission expired.`,
+        message: `${member?.displayName ?? "A member"} needs to approve again because their approval expired.`,
         severity: "warning",
       });
     } else if (BigInt(authorization.capBaseUnits) < owed) {

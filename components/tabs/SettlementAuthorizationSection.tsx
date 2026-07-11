@@ -103,13 +103,7 @@ export function SettlementAuthorizationSection({
     currentAuthorization &&
     nowMs !== null &&
     new Date(currentAuthorization.expiresAt).getTime() <= nowMs;
-  const authorizationActive =
-    currentReadiness?.status === "approved" ||
-    (detail.authorizationReadiness.length === 0 &&
-      Boolean(currentAuthorization) &&
-      !currentAuthorization?.revokedAt &&
-      !authorizationExpired &&
-      BigInt(currentAuthorization?.capBaseUnits ?? "0") === currentOwed);
+  const authorizationActive = currentReadiness?.status === "approved";
   const isDebtor = currentOwed > BigInt(0);
   const canOpenSheet =
     Boolean(lockedProposal) &&
@@ -196,8 +190,8 @@ export function SettlementAuthorizationSection({
                   <p className="text-sm font-semibold text-muted">Maximum approved</p>
                   <p className="mt-1 text-lg font-semibold text-foreground">
                     {formatUsdc(
-                      currentReadiness?.authorizationAmountBaseUnits ??
-                        currentReadiness?.contractAuthorizationAmountBaseUnits ??
+                      currentReadiness?.contractAuthorizationAmountBaseUnits ??
+                        currentReadiness?.authorizationAmountBaseUnits ??
                         currentAuthorization?.capBaseUnits ??
                         visibleCap,
                     )}
@@ -215,10 +209,7 @@ export function SettlementAuthorizationSection({
                   icon={<FiShield aria-hidden="true" />}
                   onClick={() => setSheetOpen(true)}
                 >
-                  {currentAuthorization &&
-                  !currentAuthorization.revokedAt &&
-                  nowMs !== null &&
-                  new Date(currentAuthorization.expiresAt).getTime() > nowMs
+                  {authorizationActive
                     ? "Review approval"
                     : "Approve this Final Tab"}
                 </Button>

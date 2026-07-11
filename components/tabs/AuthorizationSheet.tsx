@@ -7,7 +7,6 @@ import {
   decodeUint256,
   encodeAllowanceCall,
   encodeBalanceCall,
-  getAuthorizationStatus,
   isUserRejectedError,
   type AllowanceRead,
   type AuthorizationStatusValue,
@@ -17,7 +16,6 @@ import { Button } from "@/components/ui/Button";
 import { ErrorCallout } from "@/components/ui/ErrorCallout";
 import { Sheet } from "@/components/ui/Sheet";
 import { StatusChip } from "@/components/ui/StatusChip";
-import { useNowMs } from "@/components/tabs/useNowMs";
 import { createSettlementAccountClient, sendSettlementBatch } from "@/lib/account/zerodev/browser";
 import {
   prepareAuthorizationRequest,
@@ -98,7 +96,6 @@ export function AuthorizationSheet({
   const [allowanceRead, setAllowanceRead] = useState<AllowanceRead | null>(null);
   const [error, setError] = useState<TabClientError | null>(null);
   const [confirmingRevoke, setConfirmingRevoke] = useState(false);
-  const nowMs = useNowMs();
 
   const status = useMemo<AuthorizationStatusValue>(
     () => {
@@ -119,14 +116,9 @@ export function AuthorizationSheet({
         }
       }
 
-      return getAuthorizationStatus({
-        allowanceBaseUnits: allowanceRead?.allowanceBaseUnits ?? null,
-        authorization,
-        nowMs,
-        owedBaseUnits: BigInt(owedBaseUnits),
-      });
+      return "checking";
     },
-    [allowanceRead?.allowanceBaseUnits, authorization, nowMs, owedBaseUnits, readiness],
+    [readiness],
   );
   const balanceLow =
     allowanceRead?.balanceBaseUnits !== null &&
@@ -387,7 +379,9 @@ export function AuthorizationSheet({
           <p>
             {proposal.includedExpenseIds.length} expenses included
             {proposal.excludedExpenseIds.length > 0
-              ? ` · ${proposal.excludedExpenseIds.length} outside settlement`
+              ? ` · ${proposal.excludedExpenseIds.length} ${
+                  proposal.excludedExpenseIds.length === 1 ? "item" : "items"
+                } outside settlement`
               : ""}
           </p>
           <p>This approval lets Taby settle your share with the group if everyone is ready.</p>

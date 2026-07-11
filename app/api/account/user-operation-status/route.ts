@@ -31,16 +31,16 @@ export async function POST(request: Request) {
   }
 
   if (record.status === "submitted" && !record.transactionHash) {
-    const transactionHash = await resolveUserOperationTransactionHash(
+    const receipt = await resolveUserOperationReceipt(
       record.userOperationHash,
     );
 
-    if (transactionHash) {
+    if (receipt?.transactionHash && receipt.success) {
       const confirmed = await upsertUserOperationRecord({
         ...(payload as Parameters<typeof upsertUserOperationRecord>[0]),
         didToken,
         status: "confirmed",
-        transactionHash,
+        transactionHash: receipt.transactionHash,
         userOperationHash: record.userOperationHash,
       });
 
@@ -48,12 +48,42 @@ export async function POST(request: Request) {
         return Response.json({ record: confirmed.record });
       }
     }
+
+    if (receipt?.transactionHash && !receipt.success) {
+      const failed = await upsertUserOperationRecord({
+        ...(payload as Parameters<typeof upsertUserOperationRecord>[0]),
+        didToken,
+        failureCode: "batch_reverted",
+        failureMessage: failedOperationMessage(record.purpose),
+        status: "failed",
+        transactionHash: receipt.transactionHash,
+        userOperationHash: record.userOperationHash,
+      });
+
+      if ("record" in failed) {
+        return Response.json({ record: failed.record });
+      }
+    }
   }
 
   return Response.json({ record });
 }
 
-async function resolveUserOperationTransactionHash(userOperationHash: string) {
+function failedOperationMessage(purpose: string) {
+  switch (purpose) {
+    case "final_tab_registration":
+      return "Locking did not go through. Nothing changed. Try again.";
+    case "final_tab_revocation":
+      return "Revocation did not go through. Nothing changed. Try again.";
+    case "final_tab_cancellation":
+      return "We could not cancel this Final Tab onchain. Try again before creating a fresh one.";
+    case "final_tab_authorization":
+    default:
+      return "Approval did not go through. Nothing changed. Try again.";
+  }
+}
+
+async function resolveUserOperationReceipt(userOperationHash: string) {
   const zeroDevRpcUrl = getServerZeroDevRpcUrl();
 
   if (!zeroDevRpcUrl) {
@@ -74,19 +104,24 @@ async function resolveUserOperationTransactionHash(userOperationHash: string) {
     });
     const payload = (await response.json()) as unknown;
 
-    if (
-      payload &&
-      typeof payload === "object" &&
-      "result" in payload &&
-      payload.result &&
-      typeof payload.result === "object" &&
-      "receipt" in payload.result &&
-      payload.result.receipt &&
-      typeof payload.result.receipt === "object" &&
-      "transactionHash" in payload.result.receipt &&
-      typeof payload.result.receipt.transactionHash === "string"
-    ) {
-      return payload.result.receipt.transactionHash;
+    if (payload && typeof payload === "object" && "result" in payload) {
+      const result = payload.result;
+
+      if (!result || typeof result !== "object") {
+        return null;
+      }
+
+      const success = "success" in result ? result.success !== false : true;
+      const receipt = "receipt" in result ? result.receipt : null;
+
+      if (
+        receipt &&
+        typeof receipt === "object" &&
+        "transactionHash" in receipt &&
+        typeof receipt.transactionHash === "string"
+      ) {
+        return { success, transactionHash: receipt.transactionHash };
+      }
     }
   } catch {
     return null;

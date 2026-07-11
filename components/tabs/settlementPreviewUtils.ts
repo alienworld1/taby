@@ -48,5 +48,5 @@ export function getThresholdCopy(result: SettlementPreviewThresholdResult | null
     return `This settlement is above ${formatUsdc(result.lowRiskMaxBaseUnits)}.`;
   }
 
-  return `One payment uses more than ${result.capUsageThresholdPercent}% of its approved maximum.`;
+  return `One payment is close to its approved maximum.`;
 }

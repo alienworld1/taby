@@ -103,8 +103,8 @@ export function buildReadinessItems(input: {
     return input.readiness.map((item) => ({
       blocksSettlement: item.blocksSettlement,
       capBaseUnits:
-        item.authorizationAmountBaseUnits ??
         item.contractAuthorizationAmountBaseUnits ??
+        item.authorizationAmountBaseUnits ??
         null,
       displayName: item.displayName,
       expiresAt: item.authorizationExpiresAt,
@@ -113,6 +113,25 @@ export function buildReadinessItems(input: {
       owedBaseUnits: item.owedBaseUnits,
       status: readinessStatusValue(item.status),
     }));
+  }
+
+  if (input.proposal?.status === "locked") {
+    return [...input.debtorAmounts.entries()]
+      .map(([memberId, owed]) => {
+        const member = input.membersById.get(memberId);
+
+        return {
+          blocksSettlement: true,
+          capBaseUnits: null,
+          displayName: member?.displayName ?? "A member",
+          expiresAt: null,
+          memberId,
+          message: "Checking approval",
+          owedBaseUnits: owed.toString(),
+          status: "checking" as const,
+        };
+      })
+      .sort((a, b) => a.displayName.localeCompare(b.displayName));
   }
 
   const items: AuthorizationReadinessItem[] = [];

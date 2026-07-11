@@ -310,8 +310,7 @@ function latestAuthorizationForMember(
         authorization.settlementContractAddress.toLowerCase() ===
           settlementContractAddress.toLowerCase() &&
         (!proposalHash ||
-          !authorization.proposalHash ||
-          authorization.proposalHash.toLowerCase() === proposalHash.toLowerCase()),
+          authorization.proposalHash?.toLowerCase() === proposalHash.toLowerCase()),
     )
     .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())[0];
 }
@@ -616,7 +615,7 @@ async function buildAuthorizationReadiness(input: {
         contractAuthorization.expiresAt <= proposalExpirySeconds &&
         allowance === owed;
       const status: AuthorizationReadinessResponse["status"] =
-        contractAuthorization.revoked || authorization?.revokedAt
+        contractAuthorization.revoked
           ? "revoked"
           : !authorizationMatches
             ? "needs_approval"
@@ -634,7 +633,7 @@ async function buildAuthorizationReadiness(input: {
             : authorization?.expiresAt.toISOString() ?? null,
         blocksSettlement: status !== "approved",
         contractAuthorizationAmountBaseUnits: contractAuthorization.amount.toString(),
-        revoked: contractAuthorization.revoked || Boolean(authorization?.revokedAt),
+        revoked: contractAuthorization.revoked,
         status,
       });
     } catch {
@@ -2277,7 +2276,7 @@ export async function revokeTabAuthorization(input: {
         !contractAuthorization.revoked
       ) {
         return fail("validation_failed", 422, [
-          "Approval did not go through. Nothing changed. Try again.",
+          "Revocation did not go through. Nothing changed. Try again.",
         ]);
       }
     } catch {
@@ -3769,6 +3768,8 @@ export async function previewSettlementProposal(input: {
         : undefined;
       const status = readiness
         ? previewStatusFromReadiness(readiness.status)
+        : proposal.status === "locked"
+          ? "checking"
         : previewStatusFromAuthorization({ authorization, member, nowMs, owed });
 
       authorizationSummaries.push({
