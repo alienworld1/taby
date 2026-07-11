@@ -18,16 +18,16 @@ const jetbrains = JetBrains_Mono({
 
 export const metadata: Metadata = {
   title: {
-    default: "Taby",
+    default: "Taby — Settle the whole tab together",
     template: "%s | Taby",
   },
   description:
-    "The shared tab that settles itself. Add expenses together, confirm them together, and settle cleanly.",
+    "Agree on what counts, approve one final settlement, and close shared expenses in one safe flow.",
   applicationName: "Taby",
   openGraph: {
     title: "Taby",
     description:
-      "The shared tab that settles itself for trips, dinners, shared homes, and group bills.",
+      "Agree on what counts, approve one Final Tab, and settle every final transfer together.",
     siteName: "Taby",
     type: "website",
   },

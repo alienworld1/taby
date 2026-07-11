@@ -22,9 +22,11 @@
   --on-primary: #ffffff;
   --primary-soft: #d1ebe1;
   --primary-fixed: #b5eee2;
+  --primary-wash: #eaf4f0;
   --secondary: #a43c21;
   --secondary-soft: #ffdbd2;
   --coral: #ff7f5e;
+  --coral-wash: #fff0ec;
   --error: #ba1a1a;
   --error-container: #ffdad6;
   --on-error-container: #93000a;
@@ -55,9 +57,11 @@
   --color-on-primary: var(--on-primary);
   --color-primary-soft: var(--primary-soft);
   --color-primary-fixed: var(--primary-fixed);
+  --color-primary-wash: var(--primary-wash);
   --color-secondary: var(--secondary);
   --color-secondary-soft: var(--secondary-soft);
   --color-coral: var(--coral);
+  --color-coral-wash: var(--coral-wash);
   --color-error: var(--error);
   --color-error-container: var(--error-container);
   --color-on-error-container: var(--on-error-container);
