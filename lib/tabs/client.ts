@@ -7,6 +7,7 @@ import type {
   SettlementProposalMutationResponse,
   SettlementExecutionResponse,
   SettlementPreviewResponse,
+  FinalTabReceiptResponse,
   TabAuthorizationResponse,
   TabDetailResponse,
   TabErrorCode,
@@ -216,6 +217,10 @@ export function createTabRequest(
 
 export function fetchTabDetail(didToken: string, tabId: string) {
   return requestTaby<TabDetailResponse>(`/api/tabs/${tabId}`, didToken);
+}
+
+export function fetchFinalTabReceipt(didToken: string, tabId: string) {
+  return requestTaby<FinalTabReceiptResponse>(`/api/tabs/${tabId}/receipt`, didToken);
 }
 
 export function addMemberRequest(

@@ -85,6 +85,7 @@ import type {
   SettlementPreviewThresholdResult,
   TabDetailResponse,
   TabErrorCode,
+  FinalTabReceiptResponse,
   TabMemberResponse,
   TabResponse,
   TabResult,
@@ -118,6 +119,7 @@ const SETTLEMENT_PREVIEW_COUNTDOWN_SECONDS = 5;
 const LOW_RISK_SETTLEMENT_MAX_BASE_UNITS = BigInt(10000000);
 const CAP_USAGE_THRESHOLD_PERCENT = 50;
 const DEFAULT_ARBITRUM_SEPOLIA_RPC_URL = "https://sepolia-rollup.arbitrum.io/rpc";
+const ARBITRUM_SEPOLIA_EXPLORER_URL = "https://sepolia.arbiscan.io";
 
 function fail(code: TabErrorCode, status: number, details?: string[]): TabResult<never> {
   return { code, details, ok: false, status };
@@ -1117,6 +1119,408 @@ export async function getTabDetail(input: {
         splits:
           canSeeTabDetail ? splitRows.map((row) => splitDto(row.expense_splits)) : [],
         tab: tabDto(access.data.tab),
+      },
+      ok: true,
+    };
+  } catch {
+    return fail("database_unavailable", 503);
+  }
+}
+
+type ReceiptIncludedSnapshot = {
+  amountBaseUnits: string;
+  expenseId: string;
+};
+
+type ReceiptExcludedSnapshot = {
+  expenseId: string;
+  status: string;
+};
+
+type ReceiptTransferSnapshot = {
+  amountBaseUnits: string;
+  fromMemberId: string;
+  id?: string;
+  toMemberId: string;
+};
+
+type ReceiptNetBalanceSnapshot = {
+  direction?: string;
+  displayName?: string;
+  memberId: string;
+  netBaseUnits: string;
+};
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value && typeof value === "object" && !Array.isArray(value));
+}
+
+function receiptIncludedSnapshots(value: unknown): ReceiptIncludedSnapshot[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value.flatMap((expense) =>
+    isRecord(expense) &&
+    typeof expense.expenseId === "string" &&
+    typeof expense.amountBaseUnits === "string"
+      ? [{ amountBaseUnits: expense.amountBaseUnits, expenseId: expense.expenseId }]
+      : [],
+  );
+}
+
+function receiptExcludedSnapshots(value: unknown): ReceiptExcludedSnapshot[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value.flatMap((expense) =>
+    isRecord(expense) && typeof expense.expenseId === "string"
+      ? [
+          {
+            expenseId: expense.expenseId,
+            status: typeof expense.status === "string" ? expense.status : "disputed",
+          },
+        ]
+      : [],
+  );
+}
+
+function receiptTransferSnapshots(value: unknown): ReceiptTransferSnapshot[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value.flatMap((transfer, index) =>
+    isRecord(transfer) &&
+    typeof transfer.fromMemberId === "string" &&
+    typeof transfer.toMemberId === "string" &&
+    typeof transfer.amountBaseUnits === "string"
+      ? [
+          {
+            amountBaseUnits: transfer.amountBaseUnits,
+            fromMemberId: transfer.fromMemberId,
+            id: typeof transfer.id === "string" ? transfer.id : `transfer-${index}`,
+            toMemberId: transfer.toMemberId,
+          },
+        ]
+      : [],
+  );
+}
+
+function receiptNetBalanceSnapshots(value: unknown): ReceiptNetBalanceSnapshot[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value.flatMap((balance) =>
+    isRecord(balance) &&
+    typeof balance.memberId === "string" &&
+    typeof balance.netBaseUnits === "string"
+      ? [
+          {
+            direction: typeof balance.direction === "string" ? balance.direction : undefined,
+            displayName: typeof balance.displayName === "string" ? balance.displayName : undefined,
+            memberId: balance.memberId,
+            netBaseUnits: balance.netBaseUnits,
+          },
+        ]
+      : [],
+  );
+}
+
+function shortId(value: string) {
+  return value.length > 8 ? value.slice(0, 8) : value;
+}
+
+function equalText(left: string | null | undefined, right: string | null | undefined) {
+  return Boolean(left && right && left.toLowerCase() === right.toLowerCase());
+}
+
+function receiptLifecycleState(
+  attempt: SettlementTransaction | null,
+): Exclude<FinalTabReceiptResponse["status"], "confirmed"> {
+  if (!attempt) {
+    return "empty";
+  }
+
+  if (attempt.status === "failed" || attempt.status === "reverted") {
+    return "failed";
+  }
+
+  if (["submitted", "userop_submitted", "included", "unknown", "created"].includes(attempt.status)) {
+    return attempt.txHash && attempt.status === "unknown" ? "reconciliation_needed" : "pending";
+  }
+
+  return "reconciliation_needed";
+}
+
+function receiptStateMessage(status: Exclude<FinalTabReceiptResponse["status"], "confirmed">) {
+  switch (status) {
+    case "pending":
+      return "Settlement is still confirming. Check the tab for the latest status.";
+    case "failed":
+      return "Settlement did not go through. Nothing moved.";
+    case "reconciliation_needed":
+      return "We couldn't verify this receipt yet. Refresh status from the tab.";
+    case "inaccessible":
+      return "We couldn't find that receipt.";
+    case "empty":
+    default:
+      return "No receipt yet. Settle the Final Tab first.";
+  }
+}
+
+export async function getFinalTabReceipt(input: {
+  didToken: unknown;
+  tabId: unknown;
+}): Promise<TabResult<FinalTabReceiptResponse>> {
+  const currentUser = await getCurrentUser(input.didToken);
+
+  if (!currentUser.ok) {
+    return currentUser;
+  }
+
+  if (!isUuid(input.tabId)) {
+    return fail("validation_failed", 422);
+  }
+
+  const tabId = input.tabId;
+  const access = await getAccessContext(tabId, currentUser.data.user.id);
+
+  if (!access.ok) {
+    return access;
+  }
+
+  if (!access.data.isOwner && access.data.currentMember?.joinStatus !== "joined") {
+    return fail("not_found", 404);
+  }
+
+  try {
+    const db = getDb();
+    const [proposal] = await db
+      .select()
+      .from(settlementProposals)
+      .where(eq(settlementProposals.tabId, tabId))
+      .orderBy(
+        sql`case when ${settlementProposals.status} = 'executed' then 0 when ${settlementProposals.status} = 'locked' then 1 when ${settlementProposals.status} = 'open' then 2 else 3 end`,
+        desc(settlementProposals.updatedAt),
+      )
+      .limit(1);
+
+    if (!proposal) {
+      return {
+        data: { message: receiptStateMessage("empty"), status: "empty", tabId },
+        ok: true,
+      };
+    }
+
+    const latestAttempt = await latestSettlementAttempt(proposal.id);
+    const [confirmedAttempt] = await db
+      .select()
+      .from(settlementTransactions)
+      .where(
+        and(
+          eq(settlementTransactions.proposalId, proposal.id),
+          eq(settlementTransactions.status, "confirmed"),
+        ),
+      )
+      .orderBy(desc(settlementTransactions.attemptNumber))
+      .limit(1);
+
+    if (proposal.status !== "executed" || !confirmedAttempt) {
+      const status = receiptLifecycleState(latestAttempt);
+      return {
+        data: { message: receiptStateMessage(status), status, tabId },
+        ok: true,
+      };
+    }
+
+    const expectedContractAddress = getSettlementContractAddress();
+    const transferSnapshots = receiptTransferSnapshots(proposal.transfersJson);
+    const includedSnapshots = receiptIncludedSnapshots(
+      isRecord(proposal.canonicalPayloadJson)
+        ? proposal.canonicalPayloadJson.includedExpenses
+        : [],
+    );
+    const excludedSnapshots = receiptExcludedSnapshots(
+      isRecord(proposal.canonicalPayloadJson)
+        ? proposal.canonicalPayloadJson.excludedExpenses
+        : [],
+    );
+    const verificationPassed =
+      access.data.tab.status === "settled" &&
+      proposal.status === "executed" &&
+      confirmedAttempt.status === "confirmed" &&
+      Boolean(proposal.executedAt) &&
+      Boolean(confirmedAttempt.txHash) &&
+      Boolean(confirmedAttempt.confirmedBlockNumber) &&
+      confirmedAttempt.eventName === "FinalTabSettled" &&
+      equalText(confirmedAttempt.eventProposalHash, proposal.proposalHash) &&
+      equalText(confirmedAttempt.eventTabKey, proposal.tabKey) &&
+      equalText(confirmedAttempt.eventTransfersHash, proposal.transfersHash) &&
+      confirmedAttempt.eventTotalAmountBaseUnits?.toString() ===
+        proposal.totalAmountBaseUnits.toString() &&
+      confirmedAttempt.eventTransferCount === transferSnapshots.length &&
+      proposal.chainId === TABY_CHAIN_ID &&
+      access.data.tab.networkChainId === TABY_CHAIN_ID &&
+      confirmedAttempt.chainId === TABY_CHAIN_ID &&
+      equalText(proposal.tokenAddress, TABY_USDC_ADDRESS) &&
+      equalText(access.data.tab.tokenAddress, TABY_USDC_ADDRESS) &&
+      equalText(confirmedAttempt.tokenAddress, TABY_USDC_ADDRESS) &&
+      equalText(proposal.settlementContractAddress, expectedContractAddress) &&
+      equalText(confirmedAttempt.settlementContractAddress, expectedContractAddress);
+
+    if (!verificationPassed) {
+      return {
+        data: {
+          message: receiptStateMessage("reconciliation_needed"),
+          status: "reconciliation_needed",
+          tabId,
+        },
+        ok: true,
+      };
+    }
+
+    const [members, includedRows, excludedRows, authorizationRows, disputeRows] =
+      await Promise.all([
+        db.select().from(tabMembers).where(eq(tabMembers.tabId, tabId)),
+        proposal.includedExpenseIds.length > 0
+          ? db.select().from(expenses).where(inArray(expenses.id, proposal.includedExpenseIds))
+          : Promise.resolve([]),
+        proposal.excludedExpenseIds.length > 0
+          ? db.select().from(expenses).where(inArray(expenses.id, proposal.excludedExpenseIds))
+          : Promise.resolve([]),
+        db
+          .select()
+          .from(tabAuthorizations)
+          .where(
+            and(
+              eq(tabAuthorizations.proposalId, proposal.id),
+              eq(tabAuthorizations.proposalHash, proposal.proposalHash),
+            ),
+          ),
+        proposal.excludedExpenseIds.length > 0
+          ? db
+              .select()
+              .from(expenseConfirmations)
+              .where(inArray(expenseConfirmations.expenseId, proposal.excludedExpenseIds))
+          : Promise.resolve([]),
+      ]);
+
+    const memberById = new Map(members.map((member) => [member.id, member]));
+    const includedRowById = new Map(includedRows.map((expense) => [expense.id, expense]));
+    const excludedRowById = new Map(excludedRows.map((expense) => [expense.id, expense]));
+    const disputeReasonByExpenseId = new Map(
+      disputeRows
+        .filter((confirmation) => confirmation.status === "disputed" && confirmation.reason)
+        .map((confirmation) => [confirmation.expenseId, confirmation.reason as string]),
+    );
+    const memberName = (memberId: string) =>
+      memberById.get(memberId)?.displayName ?? `Member ${shortId(memberId)}`;
+    const memberWallet = (memberId: string) => memberById.get(memberId)?.walletAddress ?? null;
+    const includedExpenses = includedSnapshots.map((snapshot) => {
+      const row = includedRowById.get(snapshot.expenseId);
+
+      return {
+        amountBaseUnits: snapshot.amountBaseUnits,
+        id: snapshot.expenseId,
+        note: row?.note ?? null,
+        status: row?.status ?? "settled",
+        title: row?.title ?? `Expense ${shortId(snapshot.expenseId)}`,
+      };
+    });
+    const excludedExpenses = excludedSnapshots.map((snapshot) => {
+      const row = excludedRowById.get(snapshot.expenseId);
+
+      return {
+        amountBaseUnits: row?.amountBaseUnits.toString() ?? "0",
+        id: snapshot.expenseId,
+        note: disputeReasonByExpenseId.get(snapshot.expenseId) ?? row?.note ?? null,
+        status: snapshot.status,
+        title: row?.title ?? `Expense ${shortId(snapshot.expenseId)}`,
+      };
+    });
+    const includedExpenseTotalBaseUnits = includedSnapshots
+      .reduce((sum, expense) => sum + BigInt(expense.amountBaseUnits), BigInt(0))
+      .toString();
+    const debtorMemberIds = new Set(transferSnapshots.map((transfer) => transfer.fromMemberId));
+    const activeAuthorizations = authorizationRows.filter(
+      (authorization) =>
+        !authorization.revokedAt &&
+        debtorMemberIds.has(authorization.memberId) &&
+        authorization.proposalHash?.toLowerCase() === proposal.proposalHash.toLowerCase(),
+    );
+    const authorizedDebtorIds = [...new Set(activeAuthorizations.map((authorization) => authorization.memberId))];
+    const authorizationExpiryUsed =
+      activeAuthorizations
+        .map((authorization) => authorization.expiresAt)
+        .sort((a, b) => a.getTime() - b.getTime())[0] ?? proposal.expiresAt;
+    const netBalances = receiptNetBalanceSnapshots(proposal.netBalancesJson);
+
+    return {
+      data: {
+        excludedExpenseCount: excludedSnapshots.length,
+        excludedExpenses,
+        excludedReasonSummary:
+          excludedExpenses.length > 0
+            ? [...new Set(excludedExpenses.map(() => "Disputed item kept outside settlement"))]
+            : [],
+        includedExpenseCount: includedSnapshots.length,
+        includedExpenseTotalBaseUnits,
+        includedExpenses,
+        memberOutcomes: netBalances.map((balance) => {
+          const net = BigInt(balance.netBaseUnits);
+
+          return {
+            amountBaseUnits: (net < BigInt(0) ? -net : net).toString(),
+            direction: net < BigInt(0) ? "paid" : net > BigInt(0) ? "received" : "settled",
+            memberId: balance.memberId,
+            memberName: memberName(balance.memberId),
+          };
+        }),
+        proof: {
+          agreementVersion: `v${proposal.schemaVersion}.${proposal.proposalVersion}`,
+          authorizationExpiryUsed: authorizationExpiryUsed
+            ? toIso(authorizationExpiryUsed)
+            : null,
+          authorizedDebtorCount: authorizedDebtorIds.length,
+          authorizedDebtors: authorizedDebtorIds.map(memberName),
+          blockNumber: confirmedAttempt.confirmedBlockNumber?.toString() ?? null,
+          chainId: TABY_CHAIN_ID,
+          eventName: confirmedAttempt.eventName,
+          excludedExpensesHash: proposal.excludedExpensesHash,
+          explorerUrl: confirmedAttempt.txHash
+            ? `${ARBITRUM_SEPOLIA_EXPLORER_URL}/tx/${confirmedAttempt.txHash}`
+            : null,
+          includedExpensesHash: proposal.includedExpensesHash,
+          networkLabel: "Arbitrum Sepolia",
+          proposalHash: proposal.proposalHash,
+          settlementContractAddress: proposal.settlementContractAddress,
+          tabKey: proposal.tabKey,
+          tokenAddress: proposal.tokenAddress,
+          transactionHash: confirmedAttempt.txHash,
+          transfersHash: proposal.transfersHash,
+        },
+        settledAt: toIso(proposal.executedAt ?? access.data.tab.settledAt ?? confirmedAttempt.updatedAt),
+        status: "confirmed",
+        tab: {
+          id: access.data.tab.id,
+          status: access.data.tab.status,
+          title: access.data.tab.title,
+        },
+        totalSettledBaseUnits: proposal.totalAmountBaseUnits.toString(),
+        transferCount: transferSnapshots.length,
+        transfers: transferSnapshots.map((transfer) => ({
+          amountBaseUnits: transfer.amountBaseUnits,
+          fromMemberId: transfer.fromMemberId,
+          fromMemberName: memberName(transfer.fromMemberId),
+          fromWalletAddress: memberWallet(transfer.fromMemberId),
+          id: transfer.id ?? `${transfer.fromMemberId}-${transfer.toMemberId}`,
+          toMemberId: transfer.toMemberId,
+          toMemberName: memberName(transfer.toMemberId),
+          toWalletAddress: memberWallet(transfer.toMemberId),
+        })),
       },
       ok: true,
     };

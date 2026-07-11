@@ -391,6 +391,83 @@ export type SettlementExecutionResponse = {
   chainId: number;
 };
 
+export type FinalTabReceiptLifecycleStatus =
+  | "empty"
+  | "pending"
+  | "confirmed"
+  | "reconciliation_needed"
+  | "failed"
+  | "inaccessible";
+
+export type FinalTabReceiptExpense = {
+  amountBaseUnits: string;
+  id: string;
+  note: string | null;
+  status: ExpenseStatus | string;
+  title: string;
+};
+
+export type FinalTabReceiptOutcome = {
+  amountBaseUnits: string;
+  direction: "paid" | "received" | "settled";
+  memberId: string;
+  memberName: string;
+};
+
+export type FinalTabReceiptTransfer = {
+  amountBaseUnits: string;
+  fromMemberId: string;
+  fromMemberName: string;
+  fromWalletAddress: string | null;
+  id: string;
+  toMemberId: string;
+  toMemberName: string;
+  toWalletAddress: string | null;
+};
+
+export type FinalTabReceiptProof = {
+  agreementVersion: string;
+  authorizationExpiryUsed: string | null;
+  authorizedDebtorCount: number;
+  authorizedDebtors: string[];
+  blockNumber: string | null;
+  chainId: number;
+  eventName: string | null;
+  explorerUrl: string | null;
+  includedExpensesHash: string;
+  excludedExpensesHash: string;
+  networkLabel: "Arbitrum Sepolia";
+  proposalHash: string;
+  settlementContractAddress: string;
+  tabKey: string;
+  tokenAddress: string;
+  transactionHash: string | null;
+  transfersHash: string;
+};
+
+export type FinalTabReceiptResponse =
+  | {
+      status: "confirmed";
+      excludedExpenseCount: number;
+      excludedReasonSummary: string[];
+      excludedExpenses: FinalTabReceiptExpense[];
+      includedExpenseCount: number;
+      includedExpenseTotalBaseUnits: string;
+      includedExpenses: FinalTabReceiptExpense[];
+      memberOutcomes: FinalTabReceiptOutcome[];
+      proof: FinalTabReceiptProof;
+      settledAt: string;
+      tab: Pick<TabResponse, "id" | "title" | "status">;
+      totalSettledBaseUnits: string;
+      transferCount: number;
+      transfers: FinalTabReceiptTransfer[];
+    }
+  | {
+      status: Exclude<FinalTabReceiptLifecycleStatus, "confirmed">;
+      message: string;
+      tabId: string;
+    };
+
 export type SettlementProposalMutationResponse = {
   activity?: ActivityEventResponse;
   proposal: SettlementProposalResponse;
