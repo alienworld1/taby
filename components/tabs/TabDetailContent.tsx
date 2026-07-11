@@ -6,12 +6,13 @@ import { motion } from "motion/react";
 import { SignInPrompt } from "@/components/auth/SignInPrompt";
 import { useAuth } from "@/components/auth/useAuth";
 import { ExpenseWorkspace } from "@/components/tabs/ExpenseWorkspace";
+import { AgreementReadinessPanel } from "@/components/tabs/AgreementReadinessPanel";
+import { AgreementTimeline } from "@/components/tabs/AgreementTimeline";
 import { InviteAcceptancePanel } from "@/components/tabs/InviteAcceptancePanel";
 import { InviteMemberSheet } from "@/components/tabs/InviteMemberSheet";
 import { MemberPanel } from "@/components/tabs/MemberPanel";
 import { SettlementSummary } from "@/components/tabs/SettlementSummary";
 import { SettlementProposalSection } from "@/components/tabs/SettlementProposalSection";
-import { SetupProgressStrip } from "@/components/tabs/SetupProgressStrip";
 import { TabHeader } from "@/components/tabs/TabHeader";
 import { Button } from "@/components/ui/Button";
 import { EmptyState } from "@/components/ui/EmptyState";
@@ -277,7 +278,12 @@ export function TabDetailContent({ tabId }: TabDetailContentProps) {
           />
         ) : null}
         <TabHeader memberCount={visibleMembers.length} tab={detail.tab} />
-        <SetupProgressStrip />
+        <AgreementReadinessPanel
+          currentMemberId={currentMember?.id ?? null}
+          readiness={detail.agreementReadiness}
+          tabId={detail.tab.id}
+          onRefresh={loadDetail}
+        />
         <MemberPanel
           isOwner={isOwner}
           members={detail.members}
@@ -309,6 +315,7 @@ export function TabDetailContent({ tabId }: TabDetailContentProps) {
           settlementPreviewActive={settlementPreviewActive}
           onRefresh={loadDetail}
         />
+        <AgreementTimeline events={detail.agreementTimeline} onRetry={loadDetail} />
       </motion.div>
 
       <InviteMemberSheet

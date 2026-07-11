@@ -315,7 +315,7 @@ export function SettlementProposalSection({
   }
 
   return (
-    <section aria-labelledby="settlement-proposal-heading" className="grid gap-4">
+    <section aria-labelledby="settlement-proposal-heading" className="grid gap-4 scroll-mt-5" id="final-tab">
       <div>
         <h2 id="settlement-proposal-heading" className="text-xl font-semibold text-foreground">
           Final Tab
