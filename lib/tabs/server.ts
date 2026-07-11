@@ -53,6 +53,8 @@ import {
   validReceiptAuthorizations,
 } from "@/lib/tabs/receipt";
 import { buildFinalTab } from "@/lib/tabs/finalTab";
+import { buildAgreementReadiness } from "@/lib/tabs/agreementReadiness";
+import { buildAgreementTimeline } from "@/lib/tabs/agreementTimeline";
 import {
   encodeAuthorizeFinalTabBatch,
   encodeCancelFinalTabCall,
@@ -1166,7 +1168,7 @@ export async function getTabDetail(input: {
           .from(activityEvents)
           .where(eq(activityEvents.tabId, tabId))
           .orderBy(desc(activityEvents.createdAt))
-          .limit(20),
+          .limit(80),
       ]);
 
     const canSeeTabDetail =
@@ -1186,21 +1188,58 @@ export async function getTabDetail(input: {
             latestProposal?.settlementContractAddress ?? getSettlementContractAddress(),
         })
       : [];
+    const latestAttemptDto = latestAttempt ? settlementAttemptDto(latestAttempt) : null;
+    const detailMembers = settlementMembers.map(memberDto);
+    const detailExpenses = expenseRows.map(expenseDto);
+    const detailConfirmations = confirmationRows.map((row) => confirmationDto(row.expense_confirmations));
+    const detailAuthorizations = authorizationRows.map(authorizationDto);
+    const settlement = calculateSettlement(
+      createSettlementInputsFromTabDetail({
+        expenses: detailExpenses,
+        members: detailMembers,
+        splits: splitRows.map((row) => splitDto(row.expense_splits)),
+        tokenAddress: access.data.tab.tokenAddress,
+      }),
+    );
+    const verifiedSettled =
+      latestAttempt?.status === "confirmed" &&
+      latestAttempt.eventName === "FinalTabSettled" &&
+      latestAttempt.eventProposalHash?.toLowerCase() === latestProposal?.proposalHash.toLowerCase();
+    const agreementReadiness = canSeeTabDetail ? buildAgreementReadiness({
+      authorizationReadiness,
+      confirmations: detailConfirmations,
+      expenses: detailExpenses,
+      hasSettlementTransfers: settlement.ok && settlement.result.settlementCount > 0,
+      latestAttempt: latestAttemptDto,
+      members: detailMembers,
+      nowMs: Date.now(),
+      proposal: latestProposal,
+      verifiedSettled,
+    }) : {
+      contextItems: [], executionBlockers: [], groupBlockers: [], headline: "", stage: "needs_review" as const,
+    };
+    const agreementTimeline = canSeeTabDetail ? buildAgreementTimeline({
+      authorizations: detailAuthorizations,
+      events: events.map(activityDto),
+      latestAttempt: latestAttemptDto,
+      members: detailMembers,
+      nowMs: Date.now(),
+      proposal: latestProposal,
+      verifiedSettled,
+    }) : [];
 
     return {
       data: {
         activity: canSeeTabDetail ? events.map(activityDto) : [],
+        agreementReadiness,
+        agreementTimeline,
         authorizationReadiness,
-        authorizations: canSeeTabDetail ? authorizationRows.map(authorizationDto) : [],
-        confirmations: canSeeTabDetail
-          ? confirmationRows.map((row) => confirmationDto(row.expense_confirmations))
-          : [],
-        expenses: canSeeTabDetail ? expenseRows.map(expenseDto) : [],
-        latestSettlementAttempt: latestAttempt
-          ? settlementAttemptDto(latestAttempt)
-          : null,
+        authorizations: canSeeTabDetail ? detailAuthorizations : [],
+        confirmations: canSeeTabDetail ? detailConfirmations : [],
+        expenses: canSeeTabDetail ? detailExpenses : [],
+        latestSettlementAttempt: latestAttemptDto,
         latestProposal: canSeeTabDetail ? latestProposal : null,
-        members: settlementMembers.map(memberDto),
+        members: detailMembers,
         splits:
           canSeeTabDetail ? splitRows.map((row) => splitDto(row.expense_splits)) : [],
         tab: tabDto(access.data.tab),

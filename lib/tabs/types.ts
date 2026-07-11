@@ -125,6 +125,58 @@ export type ActivityEventResponse = {
   tabId: string;
 };
 
+export type AgreementBlockerResponse = {
+  action: "approve_amount" | "none" | "refresh_status" | "review_expenses" | "review_final_tab" | "review_settlement" | "view_receipt";
+  amountBaseUnits: string | null;
+  category: "agreement" | "execution" | "context";
+  id: string;
+  kind:
+    | "approval_expired"
+    | "approval_missing"
+    | "approval_revoked"
+    | "authorization_unavailable"
+    | "expense_confirmation"
+    | "final_tab_expired"
+    | "final_tab_not_created"
+    | "final_tab_not_current"
+    | "final_tab_open"
+    | "final_tab_replaced"
+    | "missing_wallet"
+    | "settlement_confirming"
+    | "settlement_failed"
+    | "disputed_expense";
+  memberId: string | null;
+  message: string;
+  severity: "info" | "warning" | "blocking";
+};
+
+export type AgreementReadinessResponse = {
+  contextItems: AgreementBlockerResponse[];
+  executionBlockers: AgreementBlockerResponse[];
+  groupBlockers: AgreementBlockerResponse[];
+  headline: string;
+  stage: "needs_review" | "awaiting_approval" | "ready_to_settle" | "settling" | "settled" | "needs_refresh";
+};
+
+export type AgreementTimelineEventResponse = {
+  id: string;
+  kind:
+    | "tab_created"
+    | "expense_added"
+    | "expense_confirmed"
+    | "expense_disputed"
+    | "final_tab_created"
+    | "final_tab_locked"
+    | "member_authorized"
+    | "authorization_revoked"
+    | "authorization_expired"
+    | "settlement_submitted"
+    | "settlement_confirmed"
+    | "settlement_failed";
+  message: string;
+  occurredAt: string;
+};
+
 export type TabMemberResponse = {
   displayName: string;
   id: string;
@@ -484,6 +536,8 @@ export type TabSummaryResponse = {
 
 export type TabDetailResponse = {
   activity: ActivityEventResponse[];
+  agreementReadiness: AgreementReadinessResponse;
+  agreementTimeline: AgreementTimelineEventResponse[];
   authorizationReadiness: AuthorizationReadinessResponse[];
   authorizations: TabAuthorizationResponse[];
   expenses: ExpenseResponse[];
