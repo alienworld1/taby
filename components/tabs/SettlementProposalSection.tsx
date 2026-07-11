@@ -21,6 +21,7 @@ import { SettlementPreviewSheet } from "@/components/tabs/SettlementPreviewSheet
 import { useNowMs } from "@/components/tabs/useNowMs";
 import { usePrefersReducedMotion } from "@/components/tabs/usePrefersReducedMotion";
 import { Button } from "@/components/ui/Button";
+import { ButtonLink } from "@/components/ui/ButtonLink";
 import { Card } from "@/components/ui/Card";
 import { ErrorCallout } from "@/components/ui/ErrorCallout";
 import { createSettlementAccountClient, sendSettlementBatch } from "@/lib/account/zerodev/browser";
@@ -453,6 +454,25 @@ export function SettlementProposalSection({
                     loading={refreshingSettlementAttempt}
                     onRefresh={() => void refreshSettlementAttempt()}
                   />
+                ) : null}
+                {settlementCompleted ? (
+                  <div className="grid gap-3 rounded-md border border-primary-fixed bg-primary-soft/45 p-4 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center">
+                    <div className="min-w-0">
+                      <h3 className="text-base font-semibold text-foreground">
+                        Shared receipt is ready
+                      </h3>
+                      <p className="mt-1 text-sm leading-6 text-muted">
+                        Open the same settled Final Tab receipt every member can verify.
+                      </p>
+                    </div>
+                    <ButtonLink
+                      className="w-full sm:w-auto"
+                      href={`/tabs/${detail.tab.id}/receipt`}
+                      icon={<FiFileText aria-hidden="true" />}
+                    >
+                      View receipt
+                    </ButtonLink>
+                  </div>
                 ) : null}
                 {expired ? (
                   <div className="rounded-md border border-outline-variant bg-secondary-soft px-4 py-3 text-sm leading-6 text-secondary">
