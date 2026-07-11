@@ -28,7 +28,7 @@ export function ExcludedExpensesSummary({
         </h3>
         <p className="mt-1 text-sm leading-6 text-muted">
           {expenses.length} {expenses.length === 1 ? "expense is" : "expenses are"} still
-          waiting, disputed, or excluded.
+          waiting, disputed, or excluded. This item stays out until the group resolves it.
         </p>
       </div>
       <div className="divide-y divide-outline-variant rounded-md border border-outline-variant bg-surface-container-low">
@@ -60,7 +60,7 @@ function getStatusLabel(status: ExcludedExpenseSummaryItem["status"]) {
   }
 
   if (status === "disputed") {
-    return "Disputed";
+    return "Disputed · outside settlement";
   }
 
   if (status === "excluded") {

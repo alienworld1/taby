@@ -3,7 +3,7 @@
 import { FiClock, FiDollarSign, FiFileText, FiLock, FiUnlock } from "react-icons/fi";
 import { motion } from "motion/react";
 import { ProposalSummaryMetric } from "@/components/tabs/ProposalSummaryMetric";
-import { formatExpiry, shortHash } from "@/components/tabs/proposalUtils";
+import { formatExpiry } from "@/components/tabs/proposalUtils";
 import { StatusChip } from "@/components/ui/StatusChip";
 import { formatUsdc } from "@/lib/tabs/money";
 import type { SettlementProposalResponse } from "@/lib/tabs/types";
@@ -68,9 +68,8 @@ export function SettlementProposalSummaryCard({
         <ProposalSummaryMetric label="Outside" value={excludedCount.toString()} />
         <ProposalSummaryMetric
           icon={<FiFileText aria-hidden="true" />}
-          label="Hash"
-          mono
-          value={shortHash(proposal.proposalHash)}
+          label="Readiness"
+          value={proposal.status === "locked" ? "Review approval" : "Review"}
         />
       </div>
     </motion.div>

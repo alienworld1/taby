@@ -5,7 +5,7 @@ import { FiArrowRight, FiUsers } from "react-icons/fi";
 import { motion } from "motion/react";
 import { Card } from "@/components/ui/Card";
 import { StatusChip } from "@/components/ui/StatusChip";
-import { formatTabStatus, tabStatusTone } from "@/components/tabs/tabDisplay";
+import { tabStatusTone } from "@/components/tabs/tabDisplay";
 import type { TabSummaryResponse } from "@/lib/tabs/types";
 
 type TabCardProps = {
@@ -14,6 +14,7 @@ type TabCardProps = {
 };
 
 function nextStepLabel(summary: TabSummaryResponse) {
+  if (summary.nextAction) return summary.nextAction;
   if (summary.tab.status === "settled") {
     return "Review the settled tab";
   }
@@ -53,8 +54,10 @@ export function TabCard({ index, summary }: TabCardProps) {
                 </p>
               ) : null}
             </div>
-            <StatusChip tone={tabStatusTone(summary.tab.status)}>
-              {formatTabStatus(summary.tab.status)}
+            <StatusChip tone={summary.presentationState === "settled" ? "success" : tabStatusTone(summary.tab.status)}>
+              {summary.presentationState
+                ? summary.presentationState.replaceAll("_", " ")
+                : "Needs review"}
             </StatusChip>
           </div>
           <div className="mt-5 flex flex-wrap items-center justify-between gap-3">

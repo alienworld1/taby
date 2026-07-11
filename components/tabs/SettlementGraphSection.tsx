@@ -37,8 +37,8 @@ export function SettlementGraphSection({
   const [selectedElementId, setSelectedElementId] = useState<string | null>(null);
   const modeHelper =
     mode === "before"
-      ? "Confirmed expenses created these IOUs."
-      : "These are the transfers your group can review next.";
+      ? "Accepted expenses created these obligations."
+      : "These final transfers close the agreed Final Tab.";
   const canRenderCanvas = graphResult.ok && graphData.members.length >= 2;
   const isEven = settlement.settlementCount === 0;
 
@@ -64,7 +64,7 @@ export function SettlementGraphSection({
               {isEven ? "Everyone is even." : settlement.summaryText}
             </motion.p>
             <p className="mt-1 text-sm leading-6 text-muted">
-              Only confirmed expenses are included.
+              Only agreed expenses count. This graph supports the Final Tab above.
             </p>
           </div>
         </div>

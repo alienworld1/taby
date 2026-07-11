@@ -23,8 +23,6 @@ import {
 } from "@/lib/tabs/client";
 import type { TabSummaryResponse } from "@/lib/tabs/types";
 
-const ACTIVE_STATUSES = new Set(["active", "review", "locked", "settling"]);
-
 export function DashboardContent() {
   const { account, errorCode, getDidToken, retryAccountSetup, status } = useAuth();
   const router = useRouter();
@@ -94,15 +92,18 @@ export function DashboardContent() {
 
       return account ? summary.tab.ownerUserId === account.id : false;
     });
-    const actionNeeded = joinedTabs.filter(
-      (summary) => ACTIVE_STATUSES.has(summary.tab.status) && summary.memberCount < 2,
-    );
-    const active = joinedTabs.filter(
-      (summary) => ACTIVE_STATUSES.has(summary.tab.status) && summary.memberCount >= 2,
-    );
-    const settled = joinedTabs.filter((summary) => summary.tab.status === "settled");
+    const setup = joinedTabs.filter((summary) => summary.memberCount < 2 && summary.presentationState !== "settled");
+    const stage = (value: NonNullable<TabSummaryResponse["presentationState"]>) =>
+      joinedTabs.filter((summary) => summary.memberCount >= 2 && summary.presentationState === value);
 
-    return { actionNeeded, active, invites: visibleInvites, settled };
+    return {
+      awaitingApproval: stage("awaiting_approval"),
+      invites: visibleInvites,
+      needsReview: stage("needs_review"),
+      readyToSettle: stage("ready_to_settle"),
+      settled: stage("settled"),
+      setup,
+    };
   }, [account, dismissedInviteIds, tabs]);
 
   async function handleCreate(input: { description?: string; title: string }) {
@@ -126,7 +127,9 @@ export function DashboardContent() {
         {
           currentMember: created.ownerMember,
           memberCount: 1,
+          nextAction: "Invite members",
           ownerDisplayName: created.ownerMember.displayName,
+          presentationState: "needs_review",
           tab: created.tab,
         },
         ...currentTabs.filter((summary) => summary.tab.id !== created.tab.id),
@@ -225,7 +228,7 @@ export function DashboardContent() {
                   Create your first tab
                 </Button>
               }
-              description="Create a shared tab for one trip, dinner, or bill."
+          description="Create a shared tab when your group is ready to agree on what counts."
               icon={<FiPlusCircle aria-hidden="true" />}
               title="No tabs yet."
             />
@@ -234,7 +237,7 @@ export function DashboardContent() {
           <div className="grid gap-6">
             <div className="flex flex-col gap-3 rounded-md border border-outline-variant bg-surface-container-lowest p-4 shadow-soft sm:flex-row sm:items-center sm:justify-between">
               <p className="text-sm leading-6 text-muted">
-                Open a tab to add people, then keep the group moving toward expenses and settlement.
+                Keep each group moving from agreed expenses to one Final Tab.
               </p>
               <Button
                 className="shrink-0"
@@ -246,7 +249,7 @@ export function DashboardContent() {
             </div>
             <TabGroup
               emptyCopy="Tabs that need one more person will appear here."
-              tabs={groupedTabs.actionNeeded}
+              tabs={groupedTabs.setup}
               title="Needs setup"
             />
             <InviteGroup
@@ -257,8 +260,10 @@ export function DashboardContent() {
                 setDismissedInviteIds((currentIds) => [...new Set([...currentIds, tabId])])
               }
             />
-            <TabGroup tabs={groupedTabs.active} title="Active tabs" />
-            <TabGroup tabs={groupedTabs.settled} title="Settled tabs" />
+            <TabGroup tabs={groupedTabs.needsReview} title="Needs review" />
+            <TabGroup tabs={groupedTabs.awaitingApproval} title="Awaiting approval" />
+            <TabGroup tabs={groupedTabs.readyToSettle} title="Ready to settle" />
+            <TabGroup tabs={groupedTabs.settled} title="Settled" />
           </div>
         )}
       </div>

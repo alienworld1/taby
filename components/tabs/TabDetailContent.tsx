@@ -294,11 +294,6 @@ export function TabDetailContent({ tabId }: TabDetailContentProps) {
           onDetailChange={setDetail}
           onRefetch={loadDetail}
         />
-        <SettlementSummary
-          detail={detail}
-          settlementPreviewActive={settlementPreviewActive}
-          onRefresh={loadDetail}
-        />
         <SettlementProposalSection
           account={account}
           currentMember={currentMember ?? null}
@@ -308,6 +303,11 @@ export function TabDetailContent({ tabId }: TabDetailContentProps) {
           onCountdownActiveChange={setSettlementPreviewActive}
           onRefetch={loadDetail}
           requestWallet={requestWallet}
+        />
+        <SettlementSummary
+          detail={detail}
+          settlementPreviewActive={settlementPreviewActive}
+          onRefresh={loadDetail}
         />
       </motion.div>
 

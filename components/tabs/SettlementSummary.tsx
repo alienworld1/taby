@@ -49,7 +49,7 @@ export function SettlementSummary({
     return (
       <section aria-labelledby="settlement-heading" className="grid gap-4">
         <h2 id="settlement-heading" className="text-xl font-semibold text-foreground">
-          Settlement
+          Final Tab evidence
         </h2>
         <ErrorCallout
           action={
@@ -73,9 +73,9 @@ export function SettlementSummary({
           Settlement
         </h2>
         <EmptyState
-          description="Confirmed expenses will appear here when your group is ready."
+          description="Only agreed expenses will be included. Anything pending or disputed stays outside."
           icon={<FiRepeat aria-hidden="true" />}
-          title="No settlement yet."
+          title="No Final Tab yet."
         />
       </section>
     );
@@ -94,10 +94,10 @@ export function SettlementSummary({
     <section aria-labelledby="settlement-heading" className="grid gap-4">
       <div>
         <h2 id="settlement-heading" className="text-xl font-semibold text-foreground">
-          Settlement graph
+          Final Tab evidence
         </h2>
         <p className="mt-1 text-sm leading-6 text-muted">
-          Confirmed expenses compress into the transfers your group can review.
+          Accepted expenses created these obligations. The Final Tab above is the group’s agreement.
         </p>
       </div>
 

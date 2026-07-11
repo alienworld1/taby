@@ -1,10 +1,10 @@
 import { FiArrowRight, FiCreditCard, FiGlobe, FiUsers } from "react-icons/fi";
 
 const members = [
-  { initials: "AM", location: "India", name: "Aisha" },
-  { initials: "DK", location: "Germany", name: "Daniel" },
-  { initials: "SP", location: "Brazil", name: "Sofia" },
-  { initials: "JL", location: "United States", name: "Jordan" },
+  { initials: "ML", location: "Lisbon", name: "Mira" },
+  { initials: "LN", location: "Berlin", name: "Leo" },
+  { initials: "CS", location: "São Paulo", name: "Camila" },
+  { initials: "NB", location: "New York", name: "Noah" },
 ];
 
 export function GroupContextSection() {
@@ -24,7 +24,7 @@ export function GroupContextSection() {
         <div className="overflow-hidden rounded-xl border border-outline-variant bg-background shadow-soft">
           <div className="flex items-center justify-between border-b border-outline-variant px-5 py-4 sm:px-6">
             <div className="flex items-center gap-2 font-semibold">
-              <FiUsers className="text-primary" /> Distributed project team
+          <FiUsers className="text-primary" /> ETH Lisbon Team · illustrative scenario
             </div>
             <span className="font-mono text-xs text-muted">4 members</span>
           </div>

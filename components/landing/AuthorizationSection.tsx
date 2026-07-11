@@ -2,7 +2,7 @@ import { FiClock, FiLock, FiRefreshCw, FiShield } from "react-icons/fi";
 
 const authorizationTerms = [
   { icon: FiLock, label: "Applies to", value: "This Final Tab only" },
-  { icon: FiClock, label: "Expires", value: "Tonight, 11:59 PM" },
+  { icon: FiClock, label: "Expires", value: "A stated deadline" },
   { icon: FiRefreshCw, label: "Before settlement", value: "Revoke anytime" },
 ];
 
@@ -24,7 +24,7 @@ export function AuthorizationSection() {
             </div>
             <div className="py-7">
               <p className="text-sm text-muted">Your maximum amount</p>
-              <p className="mt-2 font-mono text-4xl font-semibold tracking-[-0.04em] text-primary-strong sm:text-5xl">18.40 USDC</p>
+              <p className="mt-2 font-mono text-3xl font-semibold tracking-[-0.04em] text-primary-strong sm:text-4xl">Exact amount, shown before approval</p>
             </div>
             <div className="divide-y divide-outline-variant border-y border-outline-variant">
               {authorizationTerms.map((term) => {
@@ -40,7 +40,7 @@ export function AuthorizationSection() {
               })}
             </div>
             <div className="mt-6 rounded-2xl bg-primary px-5 py-3 text-center font-semibold text-on-primary">
-              Approve 18.40 USDC
+              Approve your exact amount
             </div>
           </div>
         </div>
@@ -51,7 +51,7 @@ export function AuthorizationSection() {
             Permission that ends where your obligation ends.
           </h2>
           <p className="mt-6 max-w-xl text-lg leading-8 text-muted">
-            Each person approves only their part of one locked Final Tab. The amount is capped, the approval expires, and it can be revoked before settlement.
+            Each person approves only their part of one locked Final Tab. The maximum is exact, the approval expires, and it can be revoked before settlement.
           </p>
           <p className="mt-8 border-l-2 border-coral pl-5 text-base font-semibold leading-7 text-primary-strong">
             No unlimited approval. No ambiguous request. No change can reuse an old authorization.

@@ -24,7 +24,7 @@ export function LandingHero() {
         </div>
         <p className="mt-6 flex items-center gap-2 text-sm text-muted">
           <FiCheckCircle aria-hidden="true" className="text-primary" />
-          No wallet installation, chain selection, or gas management.
+          Keep the focus on the group agreement, not payment mechanics.
         </p>
       </div>
       <FinalTabHeroVisual />
