@@ -189,6 +189,20 @@ export const tabySettlementAbi = [
     stateMutability: "view",
     type: "function",
   },
+  {
+    anonymous: false,
+    inputs: [
+      { indexed: true, internalType: "bytes32", name: "tabKey", type: "bytes32" },
+      { indexed: true, internalType: "bytes32", name: "proposalHash", type: "bytes32" },
+      { indexed: true, internalType: "address", name: "executor", type: "address" },
+      { indexed: false, internalType: "address", name: "token", type: "address" },
+      { indexed: false, internalType: "uint256", name: "totalAmount", type: "uint256" },
+      { indexed: false, internalType: "uint256", name: "transferCount", type: "uint256" },
+      { indexed: false, internalType: "bytes32", name: "transfersHash", type: "bytes32" },
+    ],
+    name: "FinalTabSettled",
+    type: "event",
+  },
 ] as const;
 
 export type FinalTabContractPayload = {
@@ -279,6 +293,24 @@ export function encodeCancelFinalTabCall(input: {
       abi: tabySettlementAbi,
       args: [input.tabKey, input.proposalHash],
       functionName: "cancelFinalTab",
+    }),
+    to: input.settlementContractAddress,
+    value: BigInt(0),
+  };
+}
+
+export function encodeSettleFinalTabCall(input: {
+  settlementContractAddress: Address;
+  payload: FinalTabPayload;
+}): EncodedSettlementCall {
+  return {
+    data: encodeFunctionData({
+      abi: tabySettlementAbi,
+      args: [
+        toFinalTabContractPayload(input.payload),
+        toSettlementContractTransfers(input.payload),
+      ],
+      functionName: "settleFinalTab",
     }),
     to: input.settlementContractAddress,
     value: BigInt(0),
