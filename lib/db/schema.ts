@@ -64,9 +64,14 @@ export const settlementProposalStatusEnum = pgEnum("settlement_proposal_status",
   "failed",
 ]);
 export const settlementTransactionStatusEnum = pgEnum("settlement_transaction_status", [
+  "created",
   "submitted",
+  "userop_submitted",
+  "included",
   "confirmed",
   "failed",
+  "reverted",
+  "unknown",
 ]);
 export const settlementAccountTypeEnum = pgEnum("settlement_account_type", [
   "magic_eoa_7702",
@@ -92,6 +97,7 @@ export const userOperationPurposeEnum = pgEnum("user_operation_purpose", [
   "final_tab_authorization",
   "final_tab_revocation",
   "final_tab_cancellation",
+  "final_tab_settlement",
 ]);
 export const userOperationStatusEnum = pgEnum("user_operation_status", [
   "submitted",
@@ -468,9 +474,27 @@ export const settlementTransactions = pgTable(
     chainId: integer("chain_id").notNull(),
     tokenAddress: text("token_address").notNull(),
     settlementContractAddress: text("settlement_contract_address").notNull(),
-    txHash: text("tx_hash").notNull(),
+    attemptNumber: integer("attempt_number").notNull(),
+    idempotencyKey: text("idempotency_key").notNull(),
+    submittedByUserId: uuid("submitted_by_user_id")
+      .notNull()
+      .references(() => users.id),
+    settlementAccountId: uuid("settlement_account_id").references(
+      () => userSettlementAccounts.id,
+    ),
+    userOperationHash: text("user_operation_hash"),
+    txHash: text("tx_hash"),
     blockNumber: bigint("block_number", { mode: "bigint" }),
+    confirmedBlockNumber: bigint("confirmed_block_number", { mode: "bigint" }),
+    eventLogIndex: integer("event_log_index"),
+    eventName: text("event_name"),
+    eventProposalHash: text("event_proposal_hash"),
+    eventTabKey: text("event_tab_key"),
+    eventTransfersHash: text("event_transfers_hash"),
+    eventTotalAmountBaseUnits: bigint("event_total_amount_base_units", { mode: "bigint" }),
+    eventTransferCount: integer("event_transfer_count"),
     status: settlementTransactionStatusEnum("status").notNull(),
+    failureCode: text("failure_code"),
     errorMessage: text("error_message"),
     createdAt: timestamp("created_at", { mode: "date", withTimezone: true })
       .defaultNow()
@@ -482,6 +506,12 @@ export const settlementTransactions = pgTable(
   (table) => [
     index("settlement_transactions_proposal_id_idx").on(table.proposalId),
     index("settlement_transactions_tab_id_idx").on(table.tabId),
+    index("settlement_transactions_status_idx").on(table.status),
+    uniqueIndex("settlement_transactions_proposal_attempt_idx").on(
+      table.proposalId,
+      table.attemptNumber,
+    ),
+    uniqueIndex("settlement_transactions_idempotency_idx").on(table.idempotencyKey),
     uniqueIndex("settlement_transactions_chain_tx_idx").on(table.chainId, table.txHash),
   ],
 );
