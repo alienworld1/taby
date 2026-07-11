@@ -3,7 +3,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { FiRefreshCcw } from "react-icons/fi";
 import { motion } from "motion/react";
+import { createSettlementAccountClient, sendSettlementBatch } from "@/lib/account/zerodev/browser";
 import { SettlementCountdown } from "@/components/tabs/SettlementCountdown";
+import { SettlementExecutionPanel } from "@/components/tabs/SettlementExecutionPanel";
 import { SettlementPreviewActionPanel } from "@/components/tabs/SettlementPreviewActionPanel";
 import { SettlementPreviewBlockerPanel } from "@/components/tabs/SettlementPreviewBlockerPanel";
 import { SettlementPreviewSafetyChecklist } from "@/components/tabs/SettlementPreviewSafetyChecklist";
@@ -17,21 +19,44 @@ import { LoadingState } from "@/components/ui/LoadingState";
 import { Sheet } from "@/components/ui/Sheet";
 import {
   previewProposalRequest,
+  confirmSettlementRequest,
+  prepareSettlementRequest,
+  reconcileSettlementRequest,
+  recordSettlementUserOperationRequest,
   toTabClientError,
   type TabClientError,
 } from "@/lib/tabs/client";
+import type { Account } from "@/lib/account/types";
 import type {
+  SettlementBlocker,
+  SettlementExecutionResponse,
   SettlementPreviewBlocker,
   SettlementPreviewSnapshot,
   SettlementPreviewThresholdResult,
   TabMemberResponse,
 } from "@/lib/tabs/types";
+import type { EIP1193Provider } from "viem";
 
 type CountdownStatus = "idle" | "running" | "cancelled" | "invalidated" | "complete";
 type ValidationStatus = "idle" | "loading" | "ready" | "blocked" | "error";
+type ExecutionStatus =
+  | "idle"
+  | "preflighting"
+  | "ready"
+  | "opening_wallet"
+  | "submitting"
+  | "submitted"
+  | "confirming"
+  | "verifying"
+  | "settled"
+  | "retryable_failed"
+  | "terminal_failed"
+  | "unknown";
 
 type SettlementPreviewSheetProps = {
+  account: Account | null;
   getDidToken: () => Promise<string | null>;
+  getWalletProvider: () => EIP1193Provider | null;
   membersById: Map<string, TabMemberResponse>;
   open: boolean;
   proposalHash: string;
@@ -41,8 +66,17 @@ type SettlementPreviewSheetProps = {
   onRefetch: () => Promise<void> | void;
 };
 
+function settlementAccountReady(account: Account | null) {
+  return (
+    account?.settlementAccount?.delegationStatus === "ready" &&
+    account.settlementAccount.paymasterPolicyStatus === "available"
+  );
+}
+
 export function SettlementPreviewSheet({
+  account,
   getDidToken,
+  getWalletProvider,
   membersById,
   open,
   proposalHash,
@@ -64,6 +98,10 @@ export function SettlementPreviewSheet({
   const [lastError, setLastError] = useState<TabClientError | null>(null);
   const [finalChecking, setFinalChecking] = useState(false);
   const [readyToSettle, setReadyToSettle] = useState(false);
+  const [executionStatus, setExecutionStatus] = useState<ExecutionStatus>("idle");
+  const [execution, setExecution] = useState<SettlementExecutionResponse | null>(null);
+  const [executionBlockers, setExecutionBlockers] = useState<SettlementBlocker[]>([]);
+  const [executionError, setExecutionError] = useState<string | null>(null);
   const snapshotHashRef = useRef<string | null>(null);
 
   const secondsRemaining = useMemo(() => {
@@ -85,6 +123,10 @@ export function SettlementPreviewSheet({
     setLastError(null);
     setFinalChecking(false);
     setReadyToSettle(false);
+    setExecutionStatus("idle");
+    setExecution(null);
+    setExecutionBlockers([]);
+    setExecutionError(null);
     snapshotHashRef.current = null;
   }, []);
 
@@ -161,6 +203,125 @@ export function SettlementPreviewSheet({
     }
   }, [runValidation]);
 
+  const applyExecutionResponse = useCallback((response: SettlementExecutionResponse) => {
+    setExecution(response);
+    setExecutionBlockers(response.blockers);
+    setExecutionStatus(response.state === "ready" ? "ready" : response.state);
+    setExecutionError(null);
+  }, []);
+
+  const handleRefreshStatus = useCallback(async (attemptId?: string) => {
+    setExecutionStatus("verifying");
+    setExecutionError(null);
+
+    try {
+      const didToken = await requireDidToken();
+      const response = await reconcileSettlementRequest(didToken, proposalId, {
+        attemptId,
+      });
+      applyExecutionResponse(response);
+
+      if (response.state === "settled") {
+        await onRefetch();
+      }
+    } catch (caught) {
+      setExecutionStatus("unknown");
+      setExecutionError(toTabClientError(caught).message);
+    }
+  }, [applyExecutionResponse, onRefetch, proposalId, requireDidToken]);
+
+  const handleSettleTogether = useCallback(async () => {
+    setExecutionStatus("preflighting");
+    setExecutionBlockers([]);
+    setExecutionError(null);
+
+    try {
+      const magicProvider = getWalletProvider();
+      const settlementAccount = account?.settlementAccount;
+
+      if (!settlementAccountReady(account) || !settlementAccount || !magicProvider) {
+        setExecutionStatus("idle");
+        setExecutionError("Preparing secure settlement. You will not need gas to continue.");
+        return;
+      }
+
+      const didToken = await requireDidToken();
+      const prepared = await prepareSettlementRequest(didToken, proposalId, {
+        expectedProposalHash: proposalHash,
+        expectedSnapshotHash: snapshotHashRef.current ?? undefined,
+      });
+      applyExecutionResponse(prepared);
+
+      if (prepared.blockers.length > 0 || prepared.state !== "ready" || !prepared.calls?.length) {
+        return;
+      }
+
+      setExecutionStatus("opening_wallet");
+
+      const settlementClient = await createSettlementAccountClient({
+        accountType: settlementAccount.accountType,
+        didToken,
+        magicProvider,
+        magicWalletAddress: settlementAccount.magicWalletAddress,
+        publicRpcUrl: process.env.NEXT_PUBLIC_ARBITRUM_SEPOLIA_RPC_URL,
+      });
+
+      if (
+        settlementClient.settlementAddress.toLowerCase() !==
+        settlementAccount.settlementAddress.toLowerCase()
+      ) {
+        setExecutionStatus("idle");
+        setExecutionError("Preparing secure settlement. Refresh your settlement account and try again.");
+        return;
+      }
+
+      setExecutionStatus("submitting");
+
+      const receipt = await sendSettlementBatch(
+        settlementClient.kernelClient,
+        prepared.calls,
+        async (userOperationHash) => {
+          setExecutionStatus("submitted");
+          await recordSettlementUserOperationRequest(didToken, proposalId, {
+            attemptId: prepared.attempt?.id ?? "",
+            userOperationHash,
+          });
+        },
+      );
+
+      setExecutionStatus("confirming");
+
+      const confirmed = await confirmSettlementRequest(didToken, proposalId, {
+        attemptId: prepared.attempt?.id ?? "",
+        transactionHash: receipt.transactionHash,
+        userOperationHash: receipt.userOperationHash,
+      });
+      applyExecutionResponse(confirmed);
+
+      if (confirmed.state === "settled") {
+        await onRefetch();
+      }
+    } catch (caught) {
+      const clientError = toTabClientError(caught);
+      const rejected = /cancel|reject|denied/i.test(clientError.message);
+
+      setExecutionStatus(rejected ? "idle" : "unknown");
+      setExecutionError(
+        rejected
+          ? "You cancelled the request. No settlement was sent."
+          : clientError.message,
+      );
+    }
+  }, [
+    account,
+    applyExecutionResponse,
+    getWalletProvider,
+    onRefetch,
+    proposalHash,
+    proposalId,
+    requireDidToken,
+  ]);
+
   useEffect(() => {
     const timeout = window.setTimeout(() => {
       onCountdownActiveChange?.(open && countdownStatus === "running");
@@ -186,6 +347,18 @@ export function SettlementPreviewSheet({
       })();
     }
   }, [open, runValidation]);
+
+  useEffect(() => {
+    if (!open || !readyToSettle) {
+      return;
+    }
+
+    const timeout = window.setTimeout(() => {
+      void handleRefreshStatus(execution?.attempt?.id);
+    }, 0);
+
+    return () => window.clearTimeout(timeout);
+  }, [execution?.attempt?.id, handleRefreshStatus, open, readyToSettle]);
 
   useEffect(() => {
     if (!open || countdownStatus !== "running") {
@@ -325,6 +498,17 @@ export function SettlementPreviewSheet({
               onCancel={handleCancel}
               onConfirm={() => void runFinalPrecheck()}
             />
+            {readyToSettle ? (
+              <SettlementExecutionPanel
+                blockers={executionBlockers}
+                errorMessage={executionError}
+                reducedMotion={reducedMotion}
+                state={executionStatus}
+                transferCount={snapshot.transfers.length}
+                onRefreshStatus={() => void handleRefreshStatus(execution?.attempt?.id)}
+                onSettle={() => void handleSettleTogether()}
+              />
+            ) : null}
           </motion.div>
         ) : null}
       </div>

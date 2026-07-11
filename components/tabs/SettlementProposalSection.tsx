@@ -16,6 +16,7 @@ import {
 import { SettlementProposalSummaryCard } from "@/components/tabs/SettlementProposalSummaryCard";
 import { SettlementTransferList } from "@/components/tabs/SettlementTransferList";
 import { SettlementAuthorizationSection } from "@/components/tabs/SettlementAuthorizationSection";
+import { SettlementAttemptRecoveryPanel } from "@/components/tabs/SettlementAttemptRecoveryPanel";
 import { SettlementPreviewSheet } from "@/components/tabs/SettlementPreviewSheet";
 import { useNowMs } from "@/components/tabs/useNowMs";
 import { usePrefersReducedMotion } from "@/components/tabs/usePrefersReducedMotion";
@@ -30,6 +31,7 @@ import {
   createProposalRequest,
   prepareCancelProposalRequest,
   prepareLockProposalRequest,
+  reconcileSettlementRequest,
   recordUserOperationStatusRequest,
   toTabClientError,
   type TabClientError,
@@ -71,6 +73,8 @@ export function SettlementProposalSection({
     null,
   );
   const [previewOpen, setPreviewOpen] = useState(false);
+  const [refreshingSettlementAttempt, setRefreshingSettlementAttempt] = useState(false);
+  const [settlementAttemptError, setSettlementAttemptError] = useState<string | null>(null);
   const nowMs = useNowMs();
   const proposal = detail.latestProposal;
   const membersById = useMemo(
@@ -111,7 +115,6 @@ export function SettlementProposalSection({
     return detail.expenses.filter((expense) => excludedIds.has(expense.id));
   }, [detail.expenses, proposal?.excludedExpenseIds]);
   const expired = isExpired(proposal, nowMs);
-  const settlementPreviewBlocker = blockers.find((blocker) => blocker.blocksFutureSettlement);
   const settlementConfigBlocker =
     !detail.tab.settlementContractAddress
       ? "Settlement is not configured yet."
@@ -123,8 +126,18 @@ export function SettlementProposalSection({
   const canOpenSettlementPreview =
     proposal?.status === "locked" &&
     !expired &&
-    !settlementPreviewBlocker &&
     !settlementConfigBlocker;
+  const latestSettlementAttempt = detail.latestSettlementAttempt;
+  const settlementCompleted =
+    proposal?.status === "executed" ||
+    latestSettlementAttempt?.status === "confirmed" ||
+    detail.tab.status === "settled";
+  const showSettlementAttemptRecovery =
+    (proposal?.status === "locked" || settlementCompleted) &&
+    latestSettlementAttempt &&
+    ["created", "submitted", "userop_submitted", "included", "confirmed", "reverted", "unknown"].includes(
+      latestSettlementAttempt.status,
+    );
 
   async function requireDidToken() {
     const didToken = await getDidToken();
@@ -278,6 +291,28 @@ export function SettlementProposalSection({
     }
   }
 
+  async function refreshSettlementAttempt() {
+    if (!proposal || !latestSettlementAttempt) {
+      return;
+    }
+
+    setRefreshingSettlementAttempt(true);
+    setSettlementAttemptError(null);
+
+    try {
+      const didToken = await requireDidToken();
+
+      await reconcileSettlementRequest(didToken, proposal.id, {
+        attemptId: latestSettlementAttempt.id,
+      });
+      await onRefetch();
+    } catch (caught) {
+      setSettlementAttemptError(toTabClientError(caught).message);
+    } finally {
+      setRefreshingSettlementAttempt(false);
+    }
+  }
+
   return (
     <section aria-labelledby="settlement-proposal-heading" className="grid gap-4">
       <div>
@@ -341,15 +376,17 @@ export function SettlementProposalSection({
                   onLock={() => void runAction("lock")}
                   onRefresh={onRefetch}
                 />
-                <SettlementAuthorizationSection
-                  account={account}
-                  currentMember={currentMember}
-                  detail={detail}
-                  getDidToken={getDidToken}
-                  getWalletProvider={getWalletProvider}
-                  requestWallet={requestWallet}
-                  onRefetch={onRefetch}
-                />
+                {!settlementCompleted ? (
+                  <SettlementAuthorizationSection
+                    account={account}
+                    currentMember={currentMember}
+                    detail={detail}
+                    getDidToken={getDidToken}
+                    getWalletProvider={getWalletProvider}
+                    requestWallet={requestWallet}
+                    onRefetch={onRefetch}
+                  />
+                ) : null}
                 <ProposalBlockerPanel blockers={blockers} reducedMotion={reducedMotion} />
                 {!isMutableTab(detail.tab.status) ? (
                   <p className="text-sm leading-6 text-muted">
@@ -392,7 +429,7 @@ export function SettlementProposalSection({
                         icon={<FiZap aria-hidden="true" />}
                         onClick={() => setPreviewOpen(true)}
                       >
-                        Settle tab
+                        Review settlement
                       </Button>
                     </div>
                     {!canOpenSettlementPreview ? (
@@ -400,7 +437,6 @@ export function SettlementProposalSection({
                         {expired
                           ? "This Final Tab expired. Create a fresh one before settling."
                           : settlementConfigBlocker ??
-                            settlementPreviewBlocker?.message ??
                             "Lock the Final Tab before previewing settlement."}
                       </p>
                     ) : null}
@@ -410,27 +446,39 @@ export function SettlementProposalSection({
                     Lock the Final Tab before previewing settlement.
                   </p>
                 ) : null}
+                {showSettlementAttemptRecovery ? (
+                  <SettlementAttemptRecoveryPanel
+                    attempt={latestSettlementAttempt}
+                    errorMessage={settlementAttemptError}
+                    loading={refreshingSettlementAttempt}
+                    onRefresh={() => void refreshSettlementAttempt()}
+                  />
+                ) : null}
                 {expired ? (
                   <div className="rounded-md border border-outline-variant bg-secondary-soft px-4 py-3 text-sm leading-6 text-secondary">
                     This Final Tab expired. Create a fresh one before settling.
                   </div>
                 ) : null}
-                <ProposalActionPanel
-                  action={proposal ? "lock" : "create"}
-                  blockers={blockers}
-                  error={error}
-                  hasActiveProposal={Boolean(proposal)}
-                  loadingAction={loadingAction}
-                  proposal={proposal}
-                  onCancel={() => {
-                    setError(null);
-                    setCancelOpen(true);
-                  }}
-                  onCreate={() => void runAction("create")}
-                  onLock={() => void runAction("lock")}
-                  onRefresh={onRefetch}
-                />
-                <ProposalBlockerPanel blockers={blockers} reducedMotion={reducedMotion} />
+                {!settlementCompleted ? (
+                  <>
+                    <ProposalActionPanel
+                      action={proposal ? "lock" : "create"}
+                      blockers={blockers}
+                      error={error}
+                      hasActiveProposal={Boolean(proposal)}
+                      loadingAction={loadingAction}
+                      proposal={proposal}
+                      onCancel={() => {
+                        setError(null);
+                        setCancelOpen(true);
+                      }}
+                      onCreate={() => void runAction("create")}
+                      onLock={() => void runAction("lock")}
+                      onRefresh={onRefetch}
+                    />
+                    <ProposalBlockerPanel blockers={blockers} reducedMotion={reducedMotion} />
+                  </>
+                ) : null}
                 <SettlementTransferList membersById={membersById} transfers={proposal.transfers} />
                 <ProposalExpenseList
                   expenses={includedExpenses}
@@ -463,9 +511,11 @@ export function SettlementProposalSection({
         }}
         onSubmit={() => void runAction("cancel")}
       />
-      {proposal?.status === "locked" ? (
+      {proposal && (proposal.status === "locked" || previewOpen) ? (
         <SettlementPreviewSheet
+          account={account}
           getDidToken={getDidToken}
+          getWalletProvider={getWalletProvider}
           membersById={membersById}
           open={previewOpen}
           proposalHash={proposal.proposalHash}

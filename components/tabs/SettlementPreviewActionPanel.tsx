@@ -120,7 +120,7 @@ export function SettlementPreviewActionPanel({
         <StatusChip tone="success">Preview passed</StatusChip>
       </div>
       <p className="mt-2 text-sm leading-6">
-        The preview passed. Settlement execution is handled in the next step.
+        The preview passed. Run the final check below when everyone is ready to close the tab.
       </p>
       {finalChecking ? (
         <Button

@@ -24,16 +24,28 @@ export function WalletDetailsCard({ account, icon }: WalletDetailsCardProps) {
           <div>
             <h2 className="text-lg font-semibold">Settlement wallet</h2>
             <p className="mt-1 text-sm leading-6 text-muted">
-              Ready for the settlement steps coming later.
+              Send USDC to the secure settlement address below before a Final Tab closes.
             </p>
           </div>
         </div>
         <StatusChip tone="success">Wallet ready</StatusChip>
       </div>
       <div className="mt-5">
-        <ReceiptBlock label="Wallet address">
-          <p className="break-all">{account.walletAddress}</p>
+        <ReceiptBlock label="USDC settlement address">
+          <p className="break-all">
+            {account.settlementAccount?.delegationStatus === "ready"
+              ? account.settlementAccount.settlementAddress
+              : "Preparing secure settlement"}
+          </p>
         </ReceiptBlock>
+        <details className="mt-3 rounded-md border border-outline-variant bg-surface-container-low px-3 py-2">
+          <summary className="cursor-pointer text-sm font-semibold text-muted">
+            Sign-in wallet
+          </summary>
+          <p className="mt-2 break-all font-mono text-xs leading-5 text-muted">
+            {account.walletAddress}
+          </p>
+        </details>
       </div>
       <SettlementAccountStatusRow readiness={account.settlementAccount} />
     </Card>

@@ -28,11 +28,6 @@ export function SettlementAccountStatusRow({ readiness }: SettlementAccountStatu
         </div>
         <StatusChip tone={status.tone}>{status.chip}</StatusChip>
       </div>
-      {readiness?.delegationStatus === "ready" ? (
-        <p className="break-all font-mono text-xs leading-5 text-muted">
-          {readiness.settlementAddress}
-        </p>
-      ) : null}
     </div>
   );
 }
@@ -51,7 +46,7 @@ function getStatus(readiness: SettlementAccountReadiness | null) {
   if (readiness.delegationStatus === "ready") {
     return {
       chip: "Ready",
-      helper: "Your account is ready for settlement steps without extra network funding.",
+      helper: "This is the address that needs USDC for Final Tab settlement. You still do not need gas.",
       icon: <FiCheckCircle aria-hidden="true" />,
       title: "Secure settlement ready",
       tone: "success" as const,
