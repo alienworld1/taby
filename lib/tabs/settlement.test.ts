@@ -6,6 +6,14 @@ import {
   type SettlementEngineResult,
 } from "./settlement";
 import { buildFinalTab, hashFinalTabPayload } from "./finalTab";
+import {
+  canViewFinalTabReceipt,
+  parseReceiptSnapshots,
+  receiptLifecycleState,
+  receiptVerificationPassed,
+  validReceiptAuthorizations,
+  type ReceiptTransferSnapshot,
+} from "./receipt";
 
 const members = [
   member("a", "Alex"),
@@ -257,6 +265,152 @@ test("Final Tab hash ignores presentation ordering but changes for material edit
   assert.notEqual(changed.proposalHash, vector.finalTab.proposalHash);
   assert.notEqual(changedVersion.proposalHash, vector.finalTab.proposalHash);
   assert.equal(hashFinalTabPayload(vector.finalTab.payload), vector.finalTab.proposalHash);
+});
+
+test("receipt lifecycle state keeps unconfirmed attempts out of confirmed copy", () => {
+  assert.equal(receiptLifecycleState(null), "empty");
+  assert.equal(receiptLifecycleState({ status: "submitted", txHash: null }), "pending");
+  assert.equal(
+    receiptLifecycleState({ status: "unknown", txHash: "0xabc" }),
+    "reconciliation_needed",
+  );
+  assert.equal(receiptLifecycleState({ status: "failed", txHash: "0xabc" }), "failed");
+  assert.equal(
+    receiptLifecycleState({ status: "confirmed", txHash: "0xabc" }),
+    "reconciliation_needed",
+  );
+});
+
+test("receipt access predicate denies non-members without data disclosure", () => {
+  assert.equal(
+    canViewFinalTabReceipt({ currentMember: { joinStatus: "joined" }, isOwner: false }),
+    true,
+  );
+  assert.equal(
+    canViewFinalTabReceipt({ currentMember: { joinStatus: "invited" }, isOwner: false }),
+    false,
+  );
+  assert.equal(canViewFinalTabReceipt({ currentMember: null, isOwner: false }), false);
+  assert.equal(canViewFinalTabReceipt({ currentMember: null, isOwner: true }), true);
+});
+
+test("receipt verification accepts only matching confirmed settlement events", () => {
+  const confirmedInput = receiptVerificationInput();
+
+  assert.equal(receiptVerificationPassed(confirmedInput), true);
+  assert.equal(
+    receiptVerificationPassed({
+      ...confirmedInput,
+      transaction: {
+        ...confirmedInput.transaction,
+        eventProposalHash: "0xdifferent",
+      },
+    }),
+    false,
+  );
+  assert.equal(
+    receiptVerificationPassed({
+      ...confirmedInput,
+      transaction: {
+        ...confirmedInput.transaction,
+        status: "included",
+      },
+    }),
+    false,
+  );
+});
+
+test("receipt snapshots reject malformed or mismatched locked data", () => {
+  const validPayload = {
+    excludedExpenses: [{ expenseId: "excluded-1", status: "disputed" }],
+    includedExpenses: [{ amountBaseUnits: "12000000", expenseId: "included-1" }],
+  };
+  const transfers = [{ amountBaseUnits: "12000000", fromMemberId: "debtor", toMemberId: "creditor" }];
+  const netBalances = [
+    { memberId: "debtor", netBaseUnits: "-12000000" },
+    { memberId: "creditor", netBaseUnits: "12000000" },
+  ];
+
+  assert.equal(
+    parseReceiptSnapshots({
+      canonicalPayloadJson: validPayload,
+      excludedExpenseIds: ["excluded-1"],
+      includedExpenseIds: ["included-1"],
+      netBalancesJson: netBalances,
+      transfersJson: transfers,
+    }).ok,
+    true,
+  );
+  assert.equal(
+    parseReceiptSnapshots({
+      canonicalPayloadJson: {
+        ...validPayload,
+        includedExpenses: [{ amountBaseUnits: "12000000" }],
+      },
+      excludedExpenseIds: ["excluded-1"],
+      includedExpenseIds: ["included-1"],
+      netBalancesJson: netBalances,
+      transfersJson: transfers,
+    }).ok,
+    false,
+  );
+  assert.equal(
+    parseReceiptSnapshots({
+      canonicalPayloadJson: validPayload,
+      excludedExpenseIds: ["excluded-1"],
+      includedExpenseIds: ["different-expense"],
+      netBalancesJson: netBalances,
+      transfersJson: transfers,
+    }).ok,
+    false,
+  );
+});
+
+test("receipt authorization proof counts only matching unrevoked coverage", () => {
+  const proposalHash = "0xproposal";
+  const proposalExecutedAt = new Date("2026-07-10T12:00:00.000Z");
+  const transfers: ReceiptTransferSnapshot[] = [
+    { amountBaseUnits: "7000000", fromMemberId: "debtor", toMemberId: "creditor-a" },
+    { amountBaseUnits: "5000000", fromMemberId: "debtor", toMemberId: "creditor-b" },
+  ];
+
+  const valid = validReceiptAuthorizations({
+    authorizationRows: [
+      receiptAuthorization({
+        authorizationAmountBaseUnits: BigInt("11999999"),
+        memberId: "debtor",
+        proposalHash,
+      }),
+      receiptAuthorization({
+        authorizationAmountBaseUnits: BigInt("12000000"),
+        memberId: "debtor",
+        proposalHash: "0xother",
+      }),
+      receiptAuthorization({
+        authorizationAmountBaseUnits: BigInt("12000000"),
+        expiresAt: new Date("2026-07-10T11:59:59.000Z"),
+        memberId: "debtor",
+        proposalHash,
+      }),
+      receiptAuthorization({
+        authorizationAmountBaseUnits: BigInt("12000000"),
+        memberId: "debtor",
+        proposalHash,
+        revokedAt: new Date("2026-07-10T11:00:00.000Z"),
+      }),
+      receiptAuthorization({
+        authorizationAmountBaseUnits: BigInt("12000000"),
+        memberId: "debtor",
+        proposalHash,
+      }),
+    ],
+    proposalExecutedAt,
+    proposalHash,
+    transfers,
+  });
+
+  assert.equal(valid.length, 1);
+  assert.equal(valid[0]?.memberId, "debtor");
 });
 
 test("handles a complex reciprocal graph where many raw IOUs cancel out", () => {
@@ -648,6 +802,69 @@ function split(expenseId: string, memberId: string, shareBaseUnits: string) {
     expenseId,
     memberId,
     shareBaseUnits,
+  };
+}
+
+function receiptAuthorization(input: {
+  authorizationAmountBaseUnits: bigint | null;
+  expiresAt?: Date;
+  memberId: string;
+  proposalHash: string;
+  revokedAt?: Date | null;
+}) {
+  return {
+    authorizationAmountBaseUnits: input.authorizationAmountBaseUnits,
+    expiresAt: input.expiresAt ?? new Date("2026-07-10T13:00:00.000Z"),
+    memberId: input.memberId,
+    proposalHash: input.proposalHash,
+    revokedAt: input.revokedAt ?? null,
+  };
+}
+
+function receiptVerificationInput() {
+  const chainId = 421614;
+  const tokenAddress = "0x75faf114eafb1BDbe2F0316DF893fd58CE46AA4d";
+  const settlementContractAddress = "0x2222222222222222222222222222222222222222";
+  const proposalHash = "0xproposal";
+  const tabKey = "0xtab";
+  const transfersHash = "0xtransfers";
+  const totalAmountBaseUnits = BigInt("12000000");
+
+  return {
+    expectedChainId: chainId,
+    expectedSettlementContractAddress: settlementContractAddress,
+    expectedTokenAddress: tokenAddress,
+    proposal: {
+      chainId,
+      executedAt: new Date("2026-07-10T12:00:00.000Z"),
+      proposalHash,
+      settlementContractAddress,
+      status: "executed",
+      tabKey,
+      tokenAddress,
+      totalAmountBaseUnits,
+      transfersHash,
+    },
+    tab: {
+      networkChainId: chainId,
+      status: "settled",
+      tokenAddress,
+    },
+    transaction: {
+      chainId,
+      confirmedBlockNumber: BigInt(123),
+      eventName: "FinalTabSettled",
+      eventProposalHash: proposalHash,
+      eventTabKey: tabKey,
+      eventTotalAmountBaseUnits: totalAmountBaseUnits,
+      eventTransferCount: 1,
+      eventTransfersHash: transfersHash,
+      settlementContractAddress,
+      status: "confirmed",
+      tokenAddress,
+      txHash: "0xtx",
+    },
+    transferCount: 1,
   };
 }
 
