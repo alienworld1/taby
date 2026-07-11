@@ -1,7 +1,5 @@
-import { FiFileText } from "react-icons/fi";
 import { AppShell } from "@/components/shell/AppShell";
-import { EmptyState } from "@/components/ui/EmptyState";
-import { ReceiptBlock } from "@/components/ui/ReceiptBlock";
+import { FinalTabReceiptContent } from "@/components/tabs/FinalTabReceiptContent";
 
 type ReceiptPageProps = {
   params: Promise<{
@@ -10,10 +8,10 @@ type ReceiptPageProps = {
 };
 
 export async function generateMetadata({ params }: ReceiptPageProps) {
-  const { tabId } = await params;
+  await params;
 
   return {
-    title: `Receipt ${tabId}`,
+    title: "Final Tab receipt",
   };
 }
 
@@ -21,17 +19,8 @@ export default async function ReceiptPage({ params }: ReceiptPageProps) {
   const { tabId } = await params;
 
   return (
-    <AppShell eyebrow={`Tab ${tabId}`} title="Receipt">
-      <div className="grid gap-5">
-        <EmptyState
-          description="A clean receipt will appear here after a real tab is settled."
-          icon={<FiFileText aria-hidden="true" />}
-          title="No receipt yet"
-        />
-        <ReceiptBlock>
-          <p>Receipt details will appear after settlement.</p>
-        </ReceiptBlock>
-      </div>
+    <AppShell eyebrow="Shared receipt" title="Final Tab receipt">
+      <FinalTabReceiptContent tabId={tabId} />
     </AppShell>
   );
 }
