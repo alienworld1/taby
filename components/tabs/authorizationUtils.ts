@@ -1,5 +1,6 @@
 import { TABY_USDC_ADDRESS } from "@/lib/tabs/constants";
 import type {
+  AuthorizationReadinessResponse,
   SettlementProposalResponse,
   TabAuthorizationResponse,
   TabDetailResponse,
@@ -66,9 +67,17 @@ export function deriveDebtorAmounts(proposal: SettlementProposalResponse | null)
 export function getLatestAuthorization(
   authorizations: TabAuthorizationResponse[],
   memberId: string,
+  proposalId?: string | null,
+  proposalHash?: string | null,
 ) {
   return [...authorizations]
-    .filter((authorization) => authorization.memberId === memberId)
+    .filter(
+      (authorization) =>
+        authorization.memberId === memberId &&
+        (!proposalId || authorization.proposalId === proposalId) &&
+        (!proposalHash ||
+          authorization.proposalHash?.toLowerCase() === proposalHash.toLowerCase()),
+    )
     .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())[0] ?? null;
 }
 
@@ -87,12 +96,35 @@ export function buildReadinessItems(input: {
   debtorAmounts: Map<string, bigint>;
   membersById: Map<string, TabMemberResponse>;
   nowMs: number | null;
+  proposal?: SettlementProposalResponse | null;
+  readiness?: AuthorizationReadinessResponse[];
 }) {
+  if (input.readiness?.length) {
+    return input.readiness.map((item) => ({
+      blocksSettlement: item.blocksSettlement,
+      capBaseUnits:
+        item.authorizationAmountBaseUnits ??
+        item.contractAuthorizationAmountBaseUnits ??
+        null,
+      displayName: item.displayName,
+      expiresAt: item.authorizationExpiresAt,
+      memberId: item.memberId,
+      message: readinessStatusMessage(item.status),
+      owedBaseUnits: item.owedBaseUnits,
+      status: readinessStatusValue(item.status),
+    }));
+  }
+
   const items: AuthorizationReadinessItem[] = [];
 
   for (const [memberId, owed] of input.debtorAmounts) {
     const member = input.membersById.get(memberId);
-    const authorization = getLatestAuthorization(input.authorizations, memberId);
+    const authorization = getLatestAuthorization(
+      input.authorizations,
+      memberId,
+      input.proposal?.id,
+      input.proposal?.proposalHash,
+    );
     const allowance = input.allowanceByMemberId?.get(memberId);
     const status = getAuthorizationStatus({
       allowanceBaseUnits: allowance ?? null,
@@ -148,6 +180,50 @@ export function getAuthorizationStatus(input: {
   }
 
   return "authorized";
+}
+
+function readinessStatusValue(
+  status: AuthorizationReadinessResponse["status"],
+): AuthorizationStatusValue {
+  switch (status) {
+    case "approved":
+      return "authorized";
+    case "expired":
+      return "expired";
+    case "revoked":
+      return "revoked";
+    case "missing_wallet":
+      return "wallet_unavailable";
+    case "stale":
+    case "needs_approval":
+      return "not_authorized";
+    case "checking":
+      return "checking";
+    case "error":
+    default:
+      return "error";
+  }
+}
+
+function readinessStatusMessage(status: AuthorizationReadinessResponse["status"]) {
+  switch (status) {
+    case "approved":
+      return "Approved";
+    case "expired":
+      return "Expired";
+    case "revoked":
+      return "Revoked";
+    case "missing_wallet":
+      return "Wallet unavailable";
+    case "checking":
+      return "Checking approval";
+    case "error":
+      return "Needs refresh";
+    case "stale":
+    case "needs_approval":
+    default:
+      return "Needs approval";
+  }
 }
 
 export function statusMessage(status: AuthorizationStatusValue) {

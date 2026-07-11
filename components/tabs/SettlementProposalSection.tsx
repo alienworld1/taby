@@ -30,6 +30,7 @@ import {
   createProposalRequest,
   prepareCancelProposalRequest,
   prepareLockProposalRequest,
+  recordUserOperationStatusRequest,
   toTabClientError,
   type TabClientError,
 } from "@/lib/tabs/client";
@@ -193,7 +194,17 @@ export function SettlementProposalSection({
           } satisfies TabClientError;
         }
 
-        const receipt = await sendSettlementBatch(settlementClient.kernelClient, prepared.calls);
+        const receipt = await sendSettlementBatch(
+          settlementClient.kernelClient,
+          prepared.calls,
+          async (userOperationHash) => {
+            await recordUserOperationStatusRequest(didToken, {
+              purpose: "final_tab_registration",
+              status: "submitted",
+              userOperationHash,
+            });
+          },
+        );
 
         await confirmLockProposalRequest(didToken, proposal.id, receipt);
       } else if (action === "cancel" && proposal) {
@@ -240,7 +251,17 @@ export function SettlementProposalSection({
             } satisfies TabClientError;
           }
 
-          const receipt = await sendSettlementBatch(settlementClient.kernelClient, prepared.calls);
+          const receipt = await sendSettlementBatch(
+            settlementClient.kernelClient,
+            prepared.calls,
+            async (userOperationHash) => {
+              await recordUserOperationStatusRequest(didToken, {
+                purpose: "final_tab_cancellation",
+                status: "submitted",
+                userOperationHash,
+              });
+            },
+          );
 
           await confirmCancelProposalRequest(didToken, proposal.id, receipt);
         } else {

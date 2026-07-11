@@ -13,6 +13,7 @@ import type {
   TabResponse,
   TabSummaryResponse,
 } from "@/lib/tabs/types";
+import type { UserOperationPurpose, UserOperationStatus } from "@/lib/account/types";
 
 export type TabClientError = {
   code: TabErrorCode;
@@ -79,6 +80,15 @@ export type PreparedFinalTabAction = {
 export type AuthorizationMutationResponse = {
   activity: ActivityEventResponse;
   authorization: TabAuthorizationResponse;
+};
+
+export type UserOperationStatusResponse = {
+  record: {
+    purpose: UserOperationPurpose;
+    status: UserOperationStatus;
+    transactionHash: string | null;
+    userOperationHash: string;
+  };
 };
 
 export type SettlementPreviewRequestInput = {
@@ -380,6 +390,24 @@ export function prepareAuthorizationRequest(
       method: "POST",
     },
   );
+}
+
+export function recordUserOperationStatusRequest(
+  didToken: string,
+  input: {
+    failureCode?: string;
+    failureMessage?: string;
+    purpose: UserOperationPurpose;
+    settlementAccountId?: string | null;
+    status: UserOperationStatus;
+    transactionHash?: string | null;
+    userOperationHash: string;
+  },
+) {
+  return requestTaby<UserOperationStatusResponse>("/api/account/user-operation-status", didToken, {
+    body: JSON.stringify(input),
+    method: "POST",
+  });
 }
 
 export function revokeAuthorizationRequest(

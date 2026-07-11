@@ -1,4 +1,5 @@
 import type {
+  AuthorizationReadinessResponse,
   ExpenseResponse,
   SettlementProposalResponse,
   TabAuthorizationResponse,
@@ -149,17 +150,41 @@ export function buildProposalBlockers(input: {
   }
 
   const debtorMemberIds = new Set(transfers.map((transfer) => transfer.fromMemberId));
+  const readinessByMemberId = new Map(
+    input.detail.authorizationReadiness.map((item) => [item.memberId, item]),
+  );
 
   for (const debtorMemberId of debtorMemberIds) {
     const member = memberById.get(debtorMemberId);
     const owed = transfers
       .filter((transfer) => transfer.fromMemberId === debtorMemberId)
       .reduce((total, transfer) => total + BigInt(transfer.amountBaseUnits), BigInt(0));
+    const readiness = readinessByMemberId.get(debtorMemberId);
     const authorization = input.authorizations
-      .filter((item) => item.memberId === debtorMemberId)
+      .filter(
+        (item) =>
+          item.memberId === debtorMemberId &&
+          (!proposal?.id || item.proposalId === proposal.id) &&
+          (!proposal?.proposalHash ||
+            item.proposalHash?.toLowerCase() === proposal.proposalHash.toLowerCase()),
+      )
       .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())[0];
 
-    if (!authorization) {
+    if (readiness) {
+      const blocker = authorizationReadinessBlocker(readiness);
+
+      if (blocker) {
+        blockers.push({
+          blocksCreate: false,
+          blocksFutureSettlement: true,
+          blocksLock: false,
+          id: `${blocker.kind}-${debtorMemberId}`,
+          kind: blocker.kind,
+          message: blocker.message,
+          severity: blocker.severity,
+        });
+      }
+    } else if (!authorization) {
       blockers.push({
         blocksCreate: false,
         blocksFutureSettlement: true,
@@ -199,7 +224,7 @@ export function buildProposalBlockers(input: {
         blocksLock: false,
         id: `authorization-insufficient-${debtorMemberId}`,
         kind: "insufficient_authorization",
-        message: `${member?.displayName ?? "A member"} needs a cap that covers their share.`,
+        message: `${member?.displayName ?? "A member"} needs approval for their exact share.`,
         severity: "warning",
       });
     }
@@ -248,6 +273,51 @@ export function getExpenseReason(expense: ExpenseResponse) {
       return "Already settled";
     default:
       return "Outside settlement";
+  }
+}
+
+function authorizationReadinessBlocker(readiness: AuthorizationReadinessResponse) {
+  switch (readiness.status) {
+    case "approved":
+      return null;
+    case "expired":
+      return {
+        kind: "expired_authorization" as const,
+        message: `${readiness.displayName} needs to approve again because their approval expired.`,
+        severity: "warning" as const,
+      };
+    case "revoked":
+      return {
+        kind: "revoked_authorization" as const,
+        message: `${readiness.displayName} needs to approve again before settlement can continue.`,
+        severity: "warning" as const,
+      };
+    case "missing_wallet":
+      return {
+        kind: "missing_wallet" as const,
+        message: `${readiness.displayName} needs a wallet before settlement can continue.`,
+        severity: "blocking" as const,
+      };
+    case "stale":
+    case "error":
+      return {
+        kind: "stale_proposal" as const,
+        message: "Refresh status before settlement can continue.",
+        severity: "blocking" as const,
+      };
+    case "checking":
+      return {
+        kind: "missing_authorization" as const,
+        message: `${readiness.displayName}'s approval is still checking.`,
+        severity: "warning" as const,
+      };
+    case "needs_approval":
+    default:
+      return {
+        kind: "missing_authorization" as const,
+        message: `${readiness.displayName} still needs to approve their share.`,
+        severity: "warning" as const,
+      };
   }
 }
 

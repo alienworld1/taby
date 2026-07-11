@@ -23,11 +23,13 @@ import {
   prepareAuthorizationRequest,
   prepareRevokeAuthorizationRequest,
   recordAuthorizationRequest,
+  recordUserOperationStatusRequest,
   revokeAuthorizationRequest,
   toTabClientError,
   type TabClientError,
 } from "@/lib/tabs/client";
 import type {
+  AuthorizationReadinessResponse,
   SettlementProposalResponse,
   TabAuthorizationResponse,
   TabDetailResponse,
@@ -56,6 +58,7 @@ type AuthorizationSheetProps = {
   open: boolean;
   owedBaseUnits: string;
   proposal: SettlementProposalResponse;
+  readiness: AuthorizationReadinessResponse | null;
   requestWallet: WalletRequest;
   settlementContractAddress: string;
   tab: TabDetailResponse["tab"];
@@ -85,6 +88,7 @@ export function AuthorizationSheet({
   open,
   owedBaseUnits,
   proposal,
+  readiness,
   requestWallet,
   settlementContractAddress,
   tab,
@@ -97,14 +101,32 @@ export function AuthorizationSheet({
   const nowMs = useNowMs();
 
   const status = useMemo<AuthorizationStatusValue>(
-    () =>
-      getAuthorizationStatus({
+    () => {
+      if (readiness) {
+        switch (readiness.status) {
+          case "approved":
+            return "authorized";
+          case "expired":
+            return "expired";
+          case "revoked":
+            return "revoked";
+          case "missing_wallet":
+            return "wallet_unavailable";
+          case "error":
+            return "error";
+          default:
+            return "not_authorized";
+        }
+      }
+
+      return getAuthorizationStatus({
         allowanceBaseUnits: allowanceRead?.allowanceBaseUnits ?? null,
         authorization,
         nowMs,
         owedBaseUnits: BigInt(owedBaseUnits),
-      }),
-    [allowanceRead?.allowanceBaseUnits, authorization, nowMs, owedBaseUnits],
+      });
+    },
+    [allowanceRead?.allowanceBaseUnits, authorization, nowMs, owedBaseUnits, readiness],
   );
   const balanceLow =
     allowanceRead?.balanceBaseUnits !== null &&
@@ -217,6 +239,10 @@ export function AuthorizationSheet({
     return settlementClient;
   }
 
+  async function refreshStatus() {
+    await Promise.all([checkAllowance(), Promise.resolve(onRefetch())]);
+  }
+
   async function handleAuthorize() {
     setError(null);
     setActionState("opening_wallet");
@@ -231,7 +257,17 @@ export function AuthorizationSheet({
       const settlementClient = await createZeroDevClient(didToken);
 
       setActionState("authorizing");
-      const receipt = await sendSettlementBatch(settlementClient.kernelClient, prepared.calls);
+      const receipt = await sendSettlementBatch(
+        settlementClient.kernelClient,
+        prepared.calls,
+        async (userOperationHash) => {
+          await recordUserOperationStatusRequest(didToken, {
+            purpose: "final_tab_authorization",
+            status: "submitted",
+            userOperationHash,
+          });
+        },
+      );
       setActionState("recording");
       await recordAuthorizationRequest(didToken, tab.id, {
         action: "confirm",
@@ -246,7 +282,8 @@ export function AuthorizationSheet({
       await onRefetch();
       handleOpenChange(false);
     } catch (caught) {
-      const clientError = isUserRejectedError(caught)
+      const rejected = isUserRejectedError(caught);
+      const clientError = rejected
         ? ({
             code: "database_unavailable",
             message: "You cancelled the request. No approval was made.",
@@ -255,7 +292,7 @@ export function AuthorizationSheet({
       setError({
         ...clientError,
         message:
-          clientError.code === "database_unavailable"
+          !rejected && clientError.code === "database_unavailable"
             ? "Approval did not go through. Nothing changed. Try again."
             : clientError.message,
       });
@@ -276,7 +313,17 @@ export function AuthorizationSheet({
       const didToken = await requireDidToken();
       const prepared = await prepareRevokeAuthorizationRequest(didToken, authorization.id);
       const settlementClient = await createZeroDevClient(didToken);
-      const receipt = await sendSettlementBatch(settlementClient.kernelClient, prepared.calls);
+      const receipt = await sendSettlementBatch(
+        settlementClient.kernelClient,
+        prepared.calls,
+        async (userOperationHash) => {
+          await recordUserOperationStatusRequest(didToken, {
+            purpose: "final_tab_revocation",
+            status: "submitted",
+            userOperationHash,
+          });
+        },
+      );
       await revokeAuthorizationRequest(didToken, authorization.id, {
         action: "confirm",
         transactionHash: receipt.transactionHash,
@@ -289,8 +336,8 @@ export function AuthorizationSheet({
       setError({
         code: "database_unavailable",
         message: isUserRejectedError(caught)
-          ? "You cancelled the request. No approval was made."
-          : "Approval did not go through. Nothing changed. Try again.",
+          ? "You cancelled the request. Your approval is still active."
+          : "Revocation did not go through. Nothing changed. Try again.",
       });
     } finally {
       setActionState("idle");
@@ -336,6 +383,16 @@ export function AuthorizationSheet({
           tokenAddress={tab.tokenAddress}
         />
 
+        <div className="grid gap-2 rounded-md border border-outline-variant bg-surface-container-low px-3 py-2 text-sm leading-6 text-muted">
+          <p>
+            {proposal.includedExpenseIds.length} expenses included
+            {proposal.excludedExpenseIds.length > 0
+              ? ` · ${proposal.excludedExpenseIds.length} outside settlement`
+              : ""}
+          </p>
+          <p>This approval lets Taby settle your share with the group if everyone is ready.</p>
+        </div>
+
         {allowanceRead ? (
           <p className="text-xs leading-5 text-muted">
             Current approved amount: {formatUsdc(allowanceRead.allowanceBaseUnits)}
@@ -350,7 +407,7 @@ export function AuthorizationSheet({
               <Button
                 icon={<FiRefreshCcw aria-hidden="true" />}
                 variant="secondary"
-                onClick={() => void checkAllowance()}
+                onClick={() => void refreshStatus()}
               >
                 Try again
               </Button>
@@ -411,7 +468,7 @@ export function AuthorizationSheet({
               icon={<FiRefreshCcw aria-hidden="true" />}
               loading={actionState === "checking"}
               variant="secondary"
-              onClick={() => void checkAllowance()}
+              onClick={() => void refreshStatus()}
             >
               Refresh status
             </Button>

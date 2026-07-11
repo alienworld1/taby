@@ -62,12 +62,14 @@ import {
 } from "@/lib/tabs/validation";
 import type {
   ActivityEventResponse,
+  AuthorizationReadinessResponse,
   ExpenseConfirmationResponse,
   ExpenseResponse,
   ExpenseSplitResponse,
   SettlementProposalMutationResponse,
   SettlementPreviewAuthorizationSummary,
   SettlementPreviewBlocker,
+  SettlementProposalResponse,
   SettlementPreviewResponse,
   SettlementPreviewSnapshot,
   SettlementPreviewThresholdResult,
@@ -218,6 +220,14 @@ function authorizationDto(authorization: TabAuthorization): TabAuthorizationResp
   };
 }
 
+function authorizationAmountBaseUnitsString(authorization: TabAuthorization | undefined) {
+  return (
+    authorization?.authorizationAmountBaseUnits?.toString() ??
+    authorization?.capBaseUnits.toString() ??
+    null
+  );
+}
+
 function previewBlocker(input: {
   expenseId?: string | null;
   id: string;
@@ -234,6 +244,55 @@ function previewBlocker(input: {
     message: input.message,
     severity: input.severity ?? "blocking",
   };
+}
+
+function previewStatusFromReadiness(
+  status: AuthorizationReadinessResponse["status"],
+): SettlementPreviewAuthorizationSummary["status"] {
+  switch (status) {
+    case "approved":
+      return "ready";
+    case "expired":
+      return "expired";
+    case "revoked":
+      return "revoked";
+    case "missing_wallet":
+      return "missing_wallet";
+    case "checking":
+      return "checking";
+    case "stale":
+      return "stale";
+    case "error":
+      return "error";
+    case "needs_approval":
+    default:
+      return "missing";
+  }
+}
+
+function previewStatusFromAuthorization(input: {
+  authorization: TabAuthorization | undefined;
+  member: TabMember | undefined;
+  nowMs: number;
+  owed: bigint;
+}): SettlementPreviewAuthorizationSummary["status"] {
+  if (!input.member?.walletAddress) {
+    return "missing_wallet";
+  }
+
+  if (!input.authorization) {
+    return "missing";
+  }
+
+  if (input.authorization.revokedAt) {
+    return "revoked";
+  }
+
+  if (input.authorization.expiresAt.getTime() <= input.nowMs) {
+    return "expired";
+  }
+
+  return input.authorization.capBaseUnits < input.owed ? "insufficient_cap" : "ready";
 }
 
 function latestAuthorizationForMember(
@@ -371,6 +430,18 @@ async function isProposalCancelled(input: {
   });
 }
 
+async function isProposalSettled(input: {
+  proposalHash: Hex;
+  settlementContractAddress: Address;
+}) {
+  return getSettlementPublicClient().readContract({
+    abi: tabySettlementAbi,
+    address: input.settlementContractAddress,
+    args: [input.proposalHash],
+    functionName: "settledProposalHashes",
+  });
+}
+
 async function readFinalTabAuthorization(input: {
   debtor: Address;
   proposalHash: Hex;
@@ -395,6 +466,192 @@ async function readUsdcAllowance(input: {
     args: [input.owner, input.spender],
     functionName: "allowance",
   });
+}
+
+async function buildAuthorizationReadiness(input: {
+  authorizations: TabAuthorization[];
+  members: TabMember[];
+  proposal: SettlementProposalResponse | null;
+  settlementContractAddress: string | null;
+}): Promise<AuthorizationReadinessResponse[]> {
+  const proposal = input.proposal?.status === "locked" ? input.proposal : null;
+
+  if (!proposal || !input.settlementContractAddress) {
+    return [];
+  }
+
+  const settlementContractAddress = normalizeEvmAddress(input.settlementContractAddress);
+  const proposalHash = normalizeHex32(proposal.proposalHash);
+  const tabKey = normalizeHex32(proposal.tabKey);
+
+  if (!settlementContractAddress || !proposalHash || !tabKey) {
+    return [];
+  }
+
+  const debtorAmounts = new Map<string, bigint>();
+
+  for (const transfer of proposal.transfers) {
+    debtorAmounts.set(
+      transfer.fromMemberId,
+      (debtorAmounts.get(transfer.fromMemberId) ?? BigInt(0)) +
+        BigInt(transfer.amountBaseUnits),
+    );
+  }
+
+  if (debtorAmounts.size === 0) {
+    return [];
+  }
+
+  const memberById = new Map(input.members.map((member) => [member.id, member]));
+  let activeMatches = false;
+  let proposalUnavailable = false;
+
+  try {
+    const [activeFinalTab, cancelled, settled] = await Promise.all([
+      readActiveFinalTab({
+        settlementContractAddress: settlementContractAddress as Address,
+        tabKey,
+      }),
+      isProposalCancelled({
+        proposalHash,
+        settlementContractAddress: settlementContractAddress as Address,
+      }),
+      isProposalSettled({
+        proposalHash,
+        settlementContractAddress: settlementContractAddress as Address,
+      }),
+    ]);
+
+    activeMatches =
+      !cancelled &&
+      !settled &&
+      activeFinalTab.proposalHash.toLowerCase() === proposalHash.toLowerCase();
+  } catch {
+    proposalUnavailable = true;
+  }
+
+  const nowSeconds = BigInt(Math.floor(Date.now() / 1000));
+  const proposalExpirySeconds = BigInt(Math.floor(new Date(proposal.expiresAt).getTime() / 1000));
+  const readiness: AuthorizationReadinessResponse[] = [];
+
+  for (const [memberId, owed] of debtorAmounts) {
+    const member = memberById.get(memberId);
+    const walletAddress = normalizeEvmAddress(member?.walletAddress);
+    const authorization = latestAuthorizationForMember(
+      input.authorizations,
+      memberId,
+      TABY_USDC_ADDRESS,
+      settlementContractAddress,
+      proposalHash,
+    );
+    const base = {
+      authorizationId: authorization?.id ?? null,
+      displayName: member?.displayName ?? "A member",
+      memberId,
+      owedBaseUnits: owed.toString(),
+      proposalHash,
+      walletAddress,
+    };
+
+    if (!walletAddress) {
+      readiness.push({
+        ...base,
+        allowanceBaseUnits: null,
+        authorizationAmountBaseUnits: null,
+        authorizationExpiresAt: null,
+        blocksSettlement: true,
+        contractAuthorizationAmountBaseUnits: null,
+        revoked: false,
+        status: "missing_wallet",
+      });
+      continue;
+    }
+
+    if (proposalUnavailable) {
+      readiness.push({
+        ...base,
+        allowanceBaseUnits: null,
+        authorizationAmountBaseUnits: authorizationAmountBaseUnitsString(authorization),
+        authorizationExpiresAt: authorization?.expiresAt.toISOString() ?? null,
+        blocksSettlement: true,
+        contractAuthorizationAmountBaseUnits: null,
+        revoked: Boolean(authorization?.revokedAt),
+        status: "error",
+      });
+      continue;
+    }
+
+    if (!activeMatches || proposalExpirySeconds <= nowSeconds) {
+      readiness.push({
+        ...base,
+        allowanceBaseUnits: null,
+        authorizationAmountBaseUnits: authorizationAmountBaseUnitsString(authorization),
+        authorizationExpiresAt: authorization?.expiresAt.toISOString() ?? null,
+        blocksSettlement: true,
+        contractAuthorizationAmountBaseUnits: null,
+        revoked: Boolean(authorization?.revokedAt),
+        status: proposalExpirySeconds <= nowSeconds ? "expired" : "stale",
+      });
+      continue;
+    }
+
+    try {
+      const [allowance, contractAuthorization] = await Promise.all([
+        readUsdcAllowance({
+          owner: walletAddress as Address,
+          spender: settlementContractAddress as Address,
+          tokenAddress: TABY_USDC_ADDRESS as Address,
+        }),
+        readFinalTabAuthorization({
+          debtor: walletAddress as Address,
+          proposalHash,
+          settlementContractAddress: settlementContractAddress as Address,
+        }),
+      ]);
+      const expiresAtMs = Number(contractAuthorization.expiresAt) * 1000;
+      const authorizationMatches =
+        contractAuthorization.proposalHash.toLowerCase() === proposalHash.toLowerCase() &&
+        isAddressEqual(contractAuthorization.debtor, walletAddress as Address) &&
+        contractAuthorization.amount === owed &&
+        contractAuthorization.expiresAt <= proposalExpirySeconds &&
+        allowance === owed;
+      const status: AuthorizationReadinessResponse["status"] =
+        contractAuthorization.revoked || authorization?.revokedAt
+          ? "revoked"
+          : !authorizationMatches
+            ? "needs_approval"
+            : contractAuthorization.expiresAt <= nowSeconds
+              ? "expired"
+              : "approved";
+
+      readiness.push({
+        ...base,
+        allowanceBaseUnits: allowance.toString(),
+        authorizationAmountBaseUnits: authorizationAmountBaseUnitsString(authorization),
+        authorizationExpiresAt:
+          contractAuthorization.expiresAt > BigInt(0)
+            ? new Date(expiresAtMs).toISOString()
+            : authorization?.expiresAt.toISOString() ?? null,
+        blocksSettlement: status !== "approved",
+        contractAuthorizationAmountBaseUnits: contractAuthorization.amount.toString(),
+        revoked: contractAuthorization.revoked || Boolean(authorization?.revokedAt),
+        status,
+      });
+    } catch {
+      readiness.push({
+        ...base,
+        allowanceBaseUnits: null,
+        authorizationAmountBaseUnits: authorizationAmountBaseUnitsString(authorization),
+        authorizationExpiresAt: authorization?.expiresAt.toISOString() ?? null,
+        blocksSettlement: true,
+        contractAuthorizationAmountBaseUnits: null,
+        revoked: Boolean(authorization?.revokedAt),
+        status: "error",
+      });
+    }
+  }
+
+  return readiness.sort((a, b) => a.displayName.localeCompare(b.displayName));
 }
 
 function buildSnapshotHash(input: Omit<SettlementPreviewSnapshot, "snapshotHash">) {
@@ -725,35 +982,35 @@ export async function getTabDetail(input: {
           .limit(20),
       ]);
 
+    const canSeeTabDetail =
+      access.data.currentMember?.joinStatus !== "invited" || access.data.isOwner;
+    const latestProposal = latestProposalRows[0] ? proposalDto(latestProposalRows[0]) : null;
+    const settlementMembers = canSeeTabDetail
+      ? await withReadySettlementWallets(db, members)
+      : members;
+    const authorizationReadiness = canSeeTabDetail
+      ? await buildAuthorizationReadiness({
+          authorizations: authorizationRows,
+          members: settlementMembers,
+          proposal: latestProposal,
+          settlementContractAddress:
+            latestProposal?.settlementContractAddress ?? getSettlementContractAddress(),
+        })
+      : [];
+
     return {
       data: {
-        activity:
-          access.data.currentMember?.joinStatus === "invited" && !access.data.isOwner
-            ? []
-            : events.map(activityDto),
-        authorizations:
-          access.data.currentMember?.joinStatus === "invited" && !access.data.isOwner
-            ? []
-            : authorizationRows.map(authorizationDto),
-        confirmations:
-          access.data.currentMember?.joinStatus === "invited" && !access.data.isOwner
-            ? []
-            : confirmationRows.map((row) => confirmationDto(row.expense_confirmations)),
-        expenses:
-          access.data.currentMember?.joinStatus === "invited" && !access.data.isOwner
-            ? []
-            : expenseRows.map(expenseDto),
-        latestProposal:
-          access.data.currentMember?.joinStatus === "invited" && !access.data.isOwner
-            ? null
-            : latestProposalRows[0]
-              ? proposalDto(latestProposalRows[0])
-              : null,
-        members: members.map(memberDto),
+        activity: canSeeTabDetail ? events.map(activityDto) : [],
+        authorizationReadiness,
+        authorizations: canSeeTabDetail ? authorizationRows.map(authorizationDto) : [],
+        confirmations: canSeeTabDetail
+          ? confirmationRows.map((row) => confirmationDto(row.expense_confirmations))
+          : [],
+        expenses: canSeeTabDetail ? expenseRows.map(expenseDto) : [],
+        latestProposal: canSeeTabDetail ? latestProposal : null,
+        members: settlementMembers.map(memberDto),
         splits:
-          access.data.currentMember?.joinStatus === "invited" && !access.data.isOwner
-            ? []
-            : splitRows.map((row) => splitDto(row.expense_splits)),
+          canSeeTabDetail ? splitRows.map((row) => splitDto(row.expense_splits)) : [],
         tab: tabDto(access.data.tab),
       },
       ok: true,
@@ -3223,7 +3480,17 @@ export async function previewSettlementProposal(input: {
     ]);
     const proposal = proposalDto(proposalRow);
     const tab = access.data.tab;
-    const memberById = new Map(members.map((member) => [member.id, member]));
+    const settlementMembers = await withReadySettlementWallets(db, members);
+    const memberById = new Map(settlementMembers.map((member) => [member.id, member]));
+    const authorizationReadiness = await buildAuthorizationReadiness({
+      authorizations: authorizationRows,
+      members: settlementMembers,
+      proposal,
+      settlementContractAddress: proposal.settlementContractAddress,
+    });
+    const readinessByMemberId = new Map(
+      authorizationReadiness.map((item) => [item.memberId, item]),
+    );
     const includedSet = new Set(proposal.includedExpenseIds);
     const settlementContractAddress = normalizeEvmAddress(getSettlementContractAddress());
     const blockers: SettlementPreviewBlocker[] = [];
@@ -3340,7 +3607,7 @@ export async function previewSettlementProposal(input: {
     const settlement = calculateSettlement(
       createSettlementInputsFromTabDetail({
         expenses: normalizedExpenses.filter((expense) => includedSet.has(expense.id)),
-        members: members.map(memberDto),
+        members: settlementMembers.map(memberDto),
         splits: splitRows.map((row) => splitDto(row.expense_splits)),
         tokenAddress: tab.tokenAddress,
       }),
@@ -3362,7 +3629,6 @@ export async function previewSettlementProposal(input: {
         }),
       );
     } else {
-      const settlementMembers = await withReadySettlementWallets(db, members);
       const coordinator = settlementMembers.find(
         (member) =>
           member.userId === tab.ownerUserId ||
@@ -3491,36 +3757,35 @@ export async function previewSettlementProposal(input: {
 
     for (const [memberId, owed] of debtorAmounts) {
       const member = memberById.get(memberId);
+      const readiness = readinessByMemberId.get(memberId);
       const authorization = settlementContractAddress
         ? latestAuthorizationForMember(
             authorizationRows,
             memberId,
             TABY_USDC_ADDRESS,
             settlementContractAddress,
+            proposal.proposalHash,
           )
         : undefined;
-      let status: SettlementPreviewAuthorizationSummary["status"] = "ready";
-
-      if (!member?.walletAddress) {
-        status = "missing_wallet";
-      } else if (!authorization) {
-        status = "missing";
-      } else if (authorization.revokedAt) {
-        status = "revoked";
-      } else if (authorization.expiresAt.getTime() <= nowMs) {
-        status = "expired";
-      } else if (authorization.capBaseUnits < owed) {
-        status = "insufficient_cap";
-      }
+      const status = readiness
+        ? previewStatusFromReadiness(readiness.status)
+        : previewStatusFromAuthorization({ authorization, member, nowMs, owed });
 
       authorizationSummaries.push({
         authorizationId: authorization?.id ?? null,
-        capBaseUnits: authorization?.capBaseUnits.toString() ?? null,
+        capBaseUnits:
+          readiness?.authorizationAmountBaseUnits ??
+          readiness?.contractAuthorizationAmountBaseUnits ??
+          authorization?.capBaseUnits.toString() ??
+          null,
         displayName: member?.displayName ?? "A member",
-        expiresAt: authorization?.expiresAt.toISOString() ?? null,
+        expiresAt: readiness?.authorizationExpiresAt ?? authorization?.expiresAt.toISOString() ?? null,
         memberId,
         owedBaseUnits: owed.toString(),
-        revokedAt: authorization?.revokedAt?.toISOString() ?? null,
+        revokedAt:
+          readiness?.revoked || authorization?.revokedAt
+            ? authorization?.revokedAt?.toISOString() ?? new Date().toISOString()
+            : null,
         status,
         walletAddress: member?.walletAddress ?? null,
       });
@@ -3531,7 +3796,7 @@ export async function previewSettlementProposal(input: {
             id: `authorization-${memberId}`,
             kind: "missing_authorization",
             memberId,
-            message: `${member?.displayName ?? "A member"} still needs to authorize their share.`,
+            message: `${member?.displayName ?? "A member"} still needs to approve their share.`,
             severity: "warning",
           }),
         );
@@ -3551,17 +3816,20 @@ export async function previewSettlementProposal(input: {
             id: `authorization-expired-${memberId}`,
             kind: "expired_authorization",
             memberId,
-            message: `${member?.displayName ?? "A member"} needs to authorize again because their permission expired.`,
+            message: `${member?.displayName ?? "A member"} needs to approve again because their approval expired.`,
             severity: "warning",
           }),
         );
-      } else if (status === "insufficient_cap") {
+      } else if (status === "insufficient_cap" || status === "stale" || status === "error") {
         blockers.push(
           previewBlocker({
             id: `authorization-insufficient-${memberId}`,
             kind: "insufficient_authorization",
             memberId,
-            message: `${member?.displayName ?? "A member"} needs a cap that covers their share.`,
+            message:
+              status === "error" || status === "stale"
+                ? "Refresh status before settlement can continue."
+                : `${member?.displayName ?? "A member"} needs approval for their exact share.`,
             severity: "warning",
           }),
         );

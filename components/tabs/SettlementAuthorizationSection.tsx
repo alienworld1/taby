@@ -66,12 +66,29 @@ export function SettlementAuthorizationSection({
         debtorAmounts,
         membersById,
         nowMs,
+        proposal: lockedProposal,
+        readiness: detail.authorizationReadiness,
       }),
-    [debtorAmounts, detail.authorizations, membersById, nowMs],
+    [
+      debtorAmounts,
+      detail.authorizationReadiness,
+      detail.authorizations,
+      lockedProposal,
+      membersById,
+      nowMs,
+    ],
   );
   const currentOwed = currentMember ? debtorAmounts.get(currentMember.id) ?? BigInt(0) : BigInt(0);
   const currentAuthorization = currentMember
-    ? getLatestAuthorization(detail.authorizations, currentMember.id)
+    ? getLatestAuthorization(
+        detail.authorizations,
+        currentMember.id,
+        lockedProposal?.id,
+        lockedProposal?.proposalHash,
+      )
+    : null;
+  const currentReadiness = currentMember
+    ? detail.authorizationReadiness.find((item) => item.memberId === currentMember.id)
     : null;
   const visibleCap = getVisibleCapBaseUnits(detail, currentOwed);
   const defaultExpiry = getDefaultExpiry(detail);
@@ -87,10 +104,12 @@ export function SettlementAuthorizationSection({
     nowMs !== null &&
     new Date(currentAuthorization.expiresAt).getTime() <= nowMs;
   const authorizationActive =
-    Boolean(currentAuthorization) &&
-    !currentAuthorization?.revokedAt &&
-    !authorizationExpired &&
-    BigInt(currentAuthorization?.capBaseUnits ?? "0") === currentOwed;
+    currentReadiness?.status === "approved" ||
+    (detail.authorizationReadiness.length === 0 &&
+      Boolean(currentAuthorization) &&
+      !currentAuthorization?.revokedAt &&
+      !authorizationExpired &&
+      BigInt(currentAuthorization?.capBaseUnits ?? "0") === currentOwed);
   const isDebtor = currentOwed > BigInt(0);
   const canOpenSheet =
     Boolean(lockedProposal) &&
@@ -176,7 +195,12 @@ export function SettlementAuthorizationSection({
                 <div className="text-left sm:text-right">
                   <p className="text-sm font-semibold text-muted">Maximum approved</p>
                   <p className="mt-1 text-lg font-semibold text-foreground">
-                    {formatUsdc(currentAuthorization?.capBaseUnits ?? visibleCap)}
+                    {formatUsdc(
+                      currentReadiness?.authorizationAmountBaseUnits ??
+                        currentReadiness?.contractAuthorizationAmountBaseUnits ??
+                        currentAuthorization?.capBaseUnits ??
+                        visibleCap,
+                    )}
                   </p>
                 </div>
               ) : null}
@@ -233,7 +257,7 @@ export function SettlementAuthorizationSection({
           authorization={currentAuthorization}
           capBaseUnits={currentOwed.toString()}
           currentMember={currentMember}
-          expiresAt={defaultExpiry}
+          expiresAt={lockedProposal.expiresAt ?? defaultExpiry}
           getDidToken={getDidToken}
           getWalletProvider={getWalletProvider}
           magicWalletAddress={account.settlementAccount.magicWalletAddress}
@@ -241,6 +265,7 @@ export function SettlementAuthorizationSection({
           open={sheetOpen}
           owedBaseUnits={currentOwed.toString()}
           proposal={lockedProposal}
+          readiness={currentReadiness ?? null}
           requestWallet={requestWallet}
           settlementContractAddress={settlementContractAddress}
           tab={detail.tab}

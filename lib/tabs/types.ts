@@ -84,6 +84,30 @@ export type TabAuthorizationResponse = {
   walletAddress: string;
 };
 
+export type AuthorizationReadinessResponse = {
+  allowanceBaseUnits: string | null;
+  authorizationAmountBaseUnits: string | null;
+  authorizationExpiresAt: string | null;
+  authorizationId: string | null;
+  blocksSettlement: boolean;
+  contractAuthorizationAmountBaseUnits: string | null;
+  displayName: string;
+  memberId: string;
+  owedBaseUnits: string;
+  proposalHash: string;
+  revoked: boolean;
+  status:
+    | "checking"
+    | "needs_approval"
+    | "approved"
+    | "expired"
+    | "revoked"
+    | "stale"
+    | "error"
+    | "missing_wallet";
+  walletAddress: string | null;
+};
+
 export type ActivityEventResponse = {
   actorUserId: string | null;
   createdAt: string;
@@ -197,7 +221,16 @@ export type SettlementPreviewAuthorizationSummary = {
   memberId: string;
   owedBaseUnits: string;
   revokedAt: string | null;
-  status: "ready" | "missing" | "expired" | "revoked" | "insufficient_cap" | "missing_wallet";
+  status:
+    | "ready"
+    | "missing"
+    | "expired"
+    | "revoked"
+    | "insufficient_cap"
+    | "missing_wallet"
+    | "stale"
+    | "checking"
+    | "error";
   walletAddress: string | null;
 };
 
@@ -286,6 +319,7 @@ export type TabSummaryResponse = {
 
 export type TabDetailResponse = {
   activity: ActivityEventResponse[];
+  authorizationReadiness: AuthorizationReadinessResponse[];
   authorizations: TabAuthorizationResponse[];
   expenses: ExpenseResponse[];
   latestProposal: SettlementProposalResponse | null;
