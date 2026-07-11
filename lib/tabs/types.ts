@@ -49,7 +49,15 @@ export type AuthorizationMethod =
   | "erc20_allowance"
   | "zerodev_session_key"
   | "zerodev_final_tab";
-export type TransactionStatus = "submitted" | "confirmed" | "failed";
+export type TransactionStatus =
+  | "created"
+  | "submitted"
+  | "userop_submitted"
+  | "included"
+  | "confirmed"
+  | "failed"
+  | "reverted"
+  | "unknown";
 export type SettlementProposalStatus =
   | "draft"
   | "open"
@@ -305,6 +313,84 @@ export type SettlementPreviewResponse = {
   thresholdResult: SettlementPreviewThresholdResult | null;
 };
 
+export type SettlementBlocker = {
+  amountBaseUnits: string | null;
+  blocksSettlement: boolean;
+  displayName: string | null;
+  id: string;
+  kind:
+    | "missing_authorization"
+    | "revoked_authorization"
+    | "expired_authorization"
+    | "insufficient_allowance"
+    | "insufficient_balance"
+    | "missing_wallet"
+    | "stale_proposal"
+    | "expired_proposal"
+    | "cancelled_proposal"
+    | "already_settled"
+    | "configuration_missing"
+    | "account_unavailable"
+    | "chain_unavailable"
+    | "unknown";
+  memberId: string | null;
+  message: string;
+  severity: "info" | "warning" | "error";
+};
+
+export type SettlementAttemptResponse = {
+  attemptNumber: number;
+  blockNumber: string | null;
+  confirmedBlockNumber: string | null;
+  createdAt: string;
+  errorMessage: string | null;
+  eventLogIndex: number | null;
+  eventName: string | null;
+  eventProposalHash: string | null;
+  eventTabKey: string | null;
+  eventTotalAmountBaseUnits: string | null;
+  eventTransferCount: number | null;
+  eventTransfersHash: string | null;
+  failureCode: string | null;
+  id: string;
+  idempotencyKey: string;
+  status: TransactionStatus;
+  txHash: string | null;
+  updatedAt: string;
+  userOperationHash: string | null;
+};
+
+export type SettlementPreparedCall = {
+  data: `0x${string}`;
+  to: `0x${string}`;
+  value: string;
+};
+
+export type SettlementExecutionResponse = {
+  attempt: SettlementAttemptResponse | null;
+  blockers: SettlementBlocker[];
+  calls?: SettlementPreparedCall[];
+  expectedTotalAmountBaseUnits: string;
+  expectedTransferCount: number;
+  expectedTransfersHash: string;
+  idempotencyKey?: string;
+  proposalHash: string;
+  settlementContractAddress: string;
+  state:
+    | "idle"
+    | "preflighting"
+    | "ready"
+    | "submitted"
+    | "confirming"
+    | "verifying"
+    | "settled"
+    | "retryable_failed"
+    | "terminal_failed"
+    | "unknown";
+  tokenAddress: string;
+  chainId: number;
+};
+
 export type SettlementProposalMutationResponse = {
   activity?: ActivityEventResponse;
   proposal: SettlementProposalResponse;
@@ -322,6 +408,7 @@ export type TabDetailResponse = {
   authorizationReadiness: AuthorizationReadinessResponse[];
   authorizations: TabAuthorizationResponse[];
   expenses: ExpenseResponse[];
+  latestSettlementAttempt: SettlementAttemptResponse | null;
   latestProposal: SettlementProposalResponse | null;
   members: TabMemberResponse[];
   splits: ExpenseSplitResponse[];

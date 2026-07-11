@@ -5,6 +5,7 @@ import type {
   ExpenseResponse,
   ExpenseSplitResponse,
   SettlementProposalMutationResponse,
+  SettlementExecutionResponse,
   SettlementPreviewResponse,
   TabAuthorizationResponse,
   TabDetailResponse,
@@ -345,6 +346,62 @@ export function previewProposalRequest(
 ) {
   return requestTaby<SettlementPreviewResponse>(`/api/proposals/${proposalId}/preview`, didToken, {
     body: JSON.stringify(input),
+    method: "POST",
+  });
+}
+
+export function prepareSettlementRequest(
+  didToken: string,
+  proposalId: string,
+  input: {
+    expectedProposalHash?: string;
+    expectedSnapshotHash?: string;
+  } = {},
+) {
+  return requestTaby<SettlementExecutionResponse>(`/api/proposals/${proposalId}/settle`, didToken, {
+    body: JSON.stringify({ action: "prepare", ...input }),
+    method: "POST",
+  });
+}
+
+export function recordSettlementUserOperationRequest(
+  didToken: string,
+  proposalId: string,
+  input: {
+    attemptId: string;
+    userOperationHash: string;
+  },
+) {
+  return requestTaby<SettlementExecutionResponse>(`/api/proposals/${proposalId}/settle`, didToken, {
+    body: JSON.stringify({ action: "record_userop", ...input }),
+    method: "POST",
+  });
+}
+
+export function confirmSettlementRequest(
+  didToken: string,
+  proposalId: string,
+  input: {
+    attemptId: string;
+    transactionHash?: string;
+    userOperationHash?: string;
+  },
+) {
+  return requestTaby<SettlementExecutionResponse>(`/api/proposals/${proposalId}/settle`, didToken, {
+    body: JSON.stringify({ action: "confirm", ...input }),
+    method: "POST",
+  });
+}
+
+export function reconcileSettlementRequest(
+  didToken: string,
+  proposalId: string,
+  input: {
+    attemptId?: string;
+  } = {},
+) {
+  return requestTaby<SettlementExecutionResponse>(`/api/proposals/${proposalId}/settle`, didToken, {
+    body: JSON.stringify({ action: "reconcile", ...input }),
     method: "POST",
   });
 }
