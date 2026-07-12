@@ -10,7 +10,7 @@ import {
 import { getEntryPoint, KERNEL_V3_3 } from "@zerodev/sdk/constants";
 import { signerToEcdsaValidator } from "@zerodev/ecdsa-validator";
 import { arbitrumSepolia } from "viem/chains";
-import { createPublicClient, http, zeroAddress, type EIP1193Provider } from "viem";
+import { createPublicClient, encodeFunctionData, erc20Abi, http, zeroAddress, type EIP1193Provider } from "viem";
 import type { SmartAccount } from "viem/account-abstraction";
 import {
   PUBLIC_ZERODEV_ENTRY_POINT_VERSION,
@@ -18,6 +18,7 @@ import {
   PUBLIC_ZERODEV_RPC_PROXY_PATH,
 } from "@/lib/account/zerodev/public-config";
 import type { SettlementAccountType } from "@/lib/account/types";
+import { TABY_USDC_ADDRESS } from "@/lib/tabs/constants";
 
 type CreateSettlementAccountClientInput = {
   accountType: SettlementAccountType;
@@ -191,6 +192,25 @@ export async function sendSettlementBatch(
     transactionHash: receipt.receipt.transactionHash,
     userOperationHash,
   };
+}
+
+export async function sendSponsoredUsdcWithdrawal(
+  kernelClient: SettlementAccountClient["kernelClient"],
+  input: { amountBaseUnits: bigint; recipientAddress: `0x${string}` },
+  onSubmitted?: (userOperationHash: string) => Promise<void> | void,
+) {
+  return sendSettlementBatch(
+    kernelClient,
+    [{
+      data: encodeFunctionData({
+        abi: erc20Abi,
+        args: [input.recipientAddress, input.amountBaseUnits],
+        functionName: "transfer",
+      }),
+      to: TABY_USDC_ADDRESS,
+    }],
+    onSubmitted,
+  );
 }
 
 function normalizeSettlementBatchError(error: unknown) {

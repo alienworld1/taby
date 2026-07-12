@@ -3,9 +3,9 @@
 import type { ReactNode } from "react";
 import { FiCreditCard } from "react-icons/fi";
 import { Card } from "@/components/ui/Card";
-import { ReceiptBlock } from "@/components/ui/ReceiptBlock";
 import { StatusChip } from "@/components/ui/StatusChip";
 import { SettlementAccountStatusRow } from "@/components/account/SettlementAccountStatusRow";
+import { SettlementFundingPanel } from "@/components/account/SettlementFundingPanel";
 import type { Account } from "@/lib/account/types";
 
 type WalletDetailsCardProps = {
@@ -30,14 +30,15 @@ export function WalletDetailsCard({ account, icon }: WalletDetailsCardProps) {
         </div>
         <StatusChip tone="success">Wallet ready</StatusChip>
       </div>
-      <div className="mt-5">
-        <ReceiptBlock label="USDC settlement address">
-          <p className="break-all">
+      {account.settlementAccount?.accountType === "zerodev_kernel" ? (
+        <SettlementFundingPanel account={account} />
+      ) : (
+        <div className="mt-5">
+          <p className="break-all rounded-md bg-surface-container-low p-4 font-mono text-sm text-muted">
             {account.settlementAccount?.delegationStatus === "ready"
               ? account.settlementAccount.settlementAddress
               : "Preparing secure settlement"}
           </p>
-        </ReceiptBlock>
         <details className="mt-3 rounded-md border border-outline-variant bg-surface-container-low px-3 py-2">
           <summary className="cursor-pointer text-sm font-semibold text-muted">
             Sign-in wallet
@@ -46,7 +47,8 @@ export function WalletDetailsCard({ account, icon }: WalletDetailsCardProps) {
             {account.walletAddress}
           </p>
         </details>
-      </div>
+        </div>
+      )}
       <SettlementAccountStatusRow readiness={account.settlementAccount} />
     </Card>
   );

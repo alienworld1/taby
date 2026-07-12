@@ -561,7 +561,8 @@ function parseOperationPurpose(value: unknown): UserOperationPurpose | null {
     value === "final_tab_authorization" ||
     value === "final_tab_revocation" ||
     value === "final_tab_cancellation" ||
-    value === "final_tab_settlement"
+    value === "final_tab_settlement" ||
+    value === "settlement_withdrawal"
     ? value
     : null;
 }

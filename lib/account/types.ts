@@ -21,8 +21,29 @@ export type UserOperationPurpose =
   | "final_tab_cancellation"
   | "final_tab_settlement"
   | "delegated_permission_installation"
-  | "delegated_final_tab_authorization";
+  | "delegated_final_tab_authorization"
+  | "settlement_withdrawal";
 export type UserOperationStatus = "submitted" | "confirmed" | "failed" | "timed_out";
+export type WithdrawalTransactionStatus = "created" | "submitted" | "confirmed" | "rejected" | "reverted" | "unknown";
+
+export type SettlementFundingSnapshot = {
+  availableToWithdrawBaseUnits: string;
+  balanceBaseUnits: string;
+  lastRefreshedAt: string;
+  networkLabel: "Arbitrum Sepolia";
+  reservedForFinalTabsBaseUnits: string;
+  settlementAddress: string;
+  tokenLabel: "USDC";
+};
+
+export type WithdrawalResponse = {
+  amountBaseUnits: string;
+  id: string;
+  recipientAddress: string;
+  status: WithdrawalTransactionStatus;
+  transactionHash: string | null;
+  userOperationHash: string | null;
+};
 
 export type SettlementAccountReadiness = {
   accountType: SettlementAccountType;
