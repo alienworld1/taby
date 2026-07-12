@@ -98,6 +98,8 @@ export const userOperationPurposeEnum = pgEnum("user_operation_purpose", [
   "final_tab_revocation",
   "final_tab_cancellation",
   "final_tab_settlement",
+  "delegated_permission_installation",
+  "delegated_final_tab_authorization",
 ]);
 export const userOperationStatusEnum = pgEnum("user_operation_status", [
   "submitted",
@@ -105,6 +107,24 @@ export const userOperationStatusEnum = pgEnum("user_operation_status", [
   "failed",
   "timed_out",
 ]);
+export const delegatedAuthorizationPermissionStatusEnum = pgEnum(
+  "delegated_authorization_permission_status",
+  [
+    "preparing",
+    "permission_pending",
+    "execution_submitted",
+    "confirmed",
+    "cancelled",
+    "revoked",
+    "expired",
+    "failed",
+    "unknown",
+  ],
+);
+export const delegatedAuthorizationCustodyModeEnum = pgEnum(
+  "delegated_authorization_custody_mode",
+  ["remote_signer", "envelope_encrypted"],
+);
 
 export const users = pgTable(
   "users",
@@ -212,6 +232,77 @@ export const userOperationRecords = pgTable(
 );
 
 export type UserOperationRecord = typeof userOperationRecords.$inferSelect;
+
+export const delegatedAuthorizationPermissions = pgTable(
+  "delegated_authorization_permissions",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    tabId: uuid("tab_id")
+      .notNull()
+      .references(() => tabs.id),
+    proposalId: uuid("proposal_id")
+      .notNull()
+      .references(() => settlementProposals.id),
+    memberId: uuid("member_id")
+      .notNull()
+      .references(() => tabMembers.id),
+    settlementAccountId: uuid("settlement_account_id")
+      .notNull()
+      .references(() => userSettlementAccounts.id),
+    proposalHash: text("proposal_hash").notNull(),
+    tabKey: text("tab_key").notNull(),
+    walletAddress: text("wallet_address").notNull(),
+    exactAmountBaseUnits: bigint("exact_amount_base_units", { mode: "bigint" }).notNull(),
+    expiresAt: timestamp("expires_at", { mode: "date", withTimezone: true }).notNull(),
+    permissionSignerAddress: text("permission_signer_address").notNull(),
+    policyDigest: text("policy_digest").notNull(),
+    permissionSerialization: jsonb("permission_serialization").notNull(),
+    credentialReference: text("credential_reference").notNull(),
+    custodyMode: delegatedAuthorizationCustodyModeEnum("custody_mode").notNull(),
+    status: delegatedAuthorizationPermissionStatusEnum("status")
+      .default("preparing")
+      .notNull(),
+    installationUserOperationHash: text("installation_user_operation_hash"),
+    installationTransactionHash: text("installation_transaction_hash"),
+    executionUserOperationHash: text("execution_user_operation_hash"),
+    executionTransactionHash: text("execution_transaction_hash"),
+    executionAttemptCount: integer("execution_attempt_count").default(0).notNull(),
+    lastExecutionAt: timestamp("last_execution_at", { mode: "date", withTimezone: true }),
+    lastErrorCode: text("last_error_code"),
+    usedAt: timestamp("used_at", { mode: "date", withTimezone: true }),
+    cancelledAt: timestamp("cancelled_at", { mode: "date", withTimezone: true }),
+    revokedAt: timestamp("revoked_at", { mode: "date", withTimezone: true }),
+    credentialDestroyedAt: timestamp("credential_destroyed_at", {
+      mode: "date",
+      withTimezone: true,
+    }),
+    createdAt: timestamp("created_at", { mode: "date", withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    updatedAt: timestamp("updated_at", { mode: "date", withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    index("delegated_authorization_permissions_proposal_status_idx").on(
+      table.proposalId,
+      table.status,
+    ),
+    index("delegated_authorization_permissions_expiry_status_idx").on(
+      table.expiresAt,
+      table.status,
+    ),
+    uniqueIndex("delegated_authorization_permissions_installation_userop_idx").on(
+      table.installationUserOperationHash,
+    ),
+    uniqueIndex("delegated_authorization_permissions_execution_userop_idx").on(
+      table.executionUserOperationHash,
+    ),
+  ],
+);
+
+export type DelegatedAuthorizationPermission =
+  typeof delegatedAuthorizationPermissions.$inferSelect;
 
 export const tabs = pgTable(
   "tabs",
