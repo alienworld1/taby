@@ -188,13 +188,6 @@ export function toTabClientError(error: unknown): TabClientError {
     };
   }
 
-  if (error instanceof Error && error.message.trim().length > 0) {
-    return {
-      code: "database_unavailable",
-      message: error.message,
-    };
-  }
-
   return {
     code: "database_unavailable",
     message: tabErrorMessage("database_unavailable"),

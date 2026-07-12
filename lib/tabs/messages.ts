@@ -9,7 +9,7 @@ export function tabErrorMessage(code: TabErrorCode) {
     case "not_found":
       return "We could not find that tab.";
     case "database_unavailable":
-      return "We could not save that change. Try again.";
+      return "We could not prepare settlement right now. Refresh status or try again later.";
     case "validation_failed":
       return "Check the details and try again.";
     case "invalid_amount":
@@ -33,9 +33,9 @@ export function tabErrorMessage(code: TabErrorCode) {
     case "proposal_not_ready":
       return "Confirmed expenses will appear here when your group is ready.";
     case "configuration_missing":
-      return "This action is not ready yet.";
+      return "We could not prepare settlement right now. Refresh status or try again later.";
     case "account_unavailable":
-      return "We could not load your account. Sign in again to continue.";
+      return "Your secure settlement account is not ready yet. Refresh status to continue.";
     case "settlement_engine_unavailable":
       return "We could not prepare the Final Tab.";
     case "stale_record":

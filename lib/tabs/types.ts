@@ -406,6 +406,9 @@ export type SettlementAttemptResponse = {
   failureCode: string | null;
   id: string;
   idempotencyKey: string;
+  lastReconciledAt: string | null;
+  lastReconcileErrorCode: string | null;
+  reconcileAttemptCount: number;
   status: TransactionStatus;
   txHash: string | null;
   updatedAt: string;
