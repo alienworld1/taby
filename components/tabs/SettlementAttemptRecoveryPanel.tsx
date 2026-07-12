@@ -31,21 +31,21 @@ function attemptCopy(attempt: SettlementAttemptResponse) {
       };
     case "reverted":
       return {
-        helper: "Refresh status before trying settlement again.",
+        helper: "Refresh status to check whether you can try again.",
         status: "Needs refresh",
         title: "Settlement did not go through. Nothing moved.",
         tone: "warning" as const,
       };
     case "unknown":
       return {
-        helper: "Refresh status before trying again.",
+        helper: "Settlement is still confirming. Refresh status before trying again.",
         status: "Needs refresh",
-        title: "Settlement is confirming. Refresh status.",
+        title: "We are still checking the result.",
         tone: "warning" as const,
       };
     default:
       return {
-        helper: "We are waiting for Arbitrum to confirm the transaction.",
+        helper: "Settlement is still confirming. Refresh status before trying again.",
         status: "Confirming",
         title: "Settling the Final Tab",
         tone: "pending" as const,

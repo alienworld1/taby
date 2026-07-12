@@ -308,7 +308,7 @@ export function SettlementPreviewSheet({
       setExecutionStatus(rejected ? "idle" : "unknown");
       setExecutionError(
         rejected
-          ? "You cancelled the request. No settlement was sent."
+          ? "You did not approve this action. Nothing changed."
           : clientError.message,
       );
     }
@@ -435,6 +435,14 @@ export function SettlementPreviewSheet({
       description="You can cancel before settlement starts."
       open={open}
       panelClassName="max-h-[92vh] overflow-y-auto sm:max-w-3xl"
+      preventClose={[
+        "preflighting",
+        "opening_wallet",
+        "submitting",
+        "submitted",
+        "confirming",
+        "verifying",
+      ].includes(executionStatus)}
       title="Review settlement"
       onOpenChange={handleOpenChange}
     >

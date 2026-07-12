@@ -17,11 +17,15 @@ type SettlementTransactionStatusProps = {
     | "retryable_failed"
     | "terminal_failed"
     | "unknown";
+  reducedMotion?: boolean;
 };
 
 const steps = ["Sent", "Confirmed", "Verified"] as const;
 
-export function SettlementTransactionStatus({ state }: SettlementTransactionStatusProps) {
+export function SettlementTransactionStatus({
+  state,
+  reducedMotion = false,
+}: SettlementTransactionStatusProps) {
   const activeIndex =
     state === "settled"
       ? 3
@@ -56,7 +60,10 @@ export function SettlementTransactionStatus({ state }: SettlementTransactionStat
               {complete ? (
                 <FiCheckCircle aria-hidden="true" className="shrink-0" />
               ) : current ? (
-                <FiLoader aria-hidden="true" className="shrink-0 animate-spin" />
+                <FiLoader
+                  aria-hidden="true"
+                  className={cn("shrink-0", !reducedMotion && "animate-spin")}
+                />
               ) : (
                 <FiCircle aria-hidden="true" className="shrink-0" />
               )}

@@ -44,7 +44,7 @@ export function SettlementExecutionPanel({
   const pending = ["preflighting", "opening_wallet", "submitting", "submitted", "confirming", "verifying"].includes(
     state,
   );
-  const canRetry = state === "retryable_failed" || state === "unknown";
+  const canRetry = state === "retryable_failed";
   const primaryCopy =
     state === "preflighting"
       ? "Checking final settlement"
@@ -85,7 +85,7 @@ export function SettlementExecutionPanel({
             {state === "settled"
               ? "The agreed transfers are complete."
               : state === "confirming" || state === "verifying"
-                ? "We are waiting for Arbitrum to confirm the transaction."
+                ? "Settlement is still confirming. Refresh status before trying again."
                 : state === "opening_wallet"
                   ? "You will not need gas to continue."
                   : "Taby checks the final agreement before sending settlement."}
@@ -93,7 +93,9 @@ export function SettlementExecutionPanel({
         </div>
       </div>
 
-      {pending || state === "settled" ? <SettlementTransactionStatus state={state} /> : null}
+      {pending || state === "settled" ? (
+        <SettlementTransactionStatus reducedMotion={reducedMotion} state={state} />
+      ) : null}
 
       {blockers.length > 0 ? (
         <div className="grid gap-2">
@@ -132,7 +134,7 @@ export function SettlementExecutionPanel({
             loading={pending}
             onClick={onSettle}
           >
-            {canRetry ? "Try settlement again" : "Settle together"}
+            {canRetry ? "Try again" : "Settle together"}
           </Button>
         ) : null}
         {state === "confirming" || state === "verifying" || state === "unknown" ? (
