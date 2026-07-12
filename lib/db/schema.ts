@@ -496,6 +496,9 @@ export const settlementTransactions = pgTable(
     status: settlementTransactionStatusEnum("status").notNull(),
     failureCode: text("failure_code"),
     errorMessage: text("error_message"),
+    lastReconciledAt: timestamp("last_reconciled_at", { mode: "date", withTimezone: true }),
+    reconcileAttemptCount: integer("reconcile_attempt_count").default(0).notNull(),
+    lastReconcileErrorCode: text("last_reconcile_error_code"),
     createdAt: timestamp("created_at", { mode: "date", withTimezone: true })
       .defaultNow()
       .notNull(),

@@ -521,6 +521,9 @@ function settlementAttemptDto(transaction: SettlementTransaction): SettlementAtt
     failureCode: transaction.failureCode,
     id: transaction.id,
     idempotencyKey: transaction.idempotencyKey,
+    lastReconciledAt: transaction.lastReconciledAt ? toIso(transaction.lastReconciledAt) : null,
+    lastReconcileErrorCode: transaction.lastReconcileErrorCode,
+    reconcileAttemptCount: transaction.reconcileAttemptCount,
     status: transaction.status,
     txHash: transaction.txHash,
     updatedAt: toIso(transaction.updatedAt),
@@ -4761,6 +4764,9 @@ async function finalizeSettlementAttempt(
       const [updatedAttempt] = await db
         .update(settlementTransactions)
         .set({
+          lastReconciledAt: new Date(),
+          lastReconcileErrorCode: "receipt_pending",
+          reconcileAttemptCount: sql`${settlementTransactions.reconcileAttemptCount} + 1`,
           status: "unknown",
           updatedAt: new Date(),
           userOperationHash,
@@ -4780,6 +4786,17 @@ async function finalizeSettlementAttempt(
   }
 
   if (!transactionHash) {
+    if (mode === "reconcile") {
+      await db
+        .update(settlementTransactions)
+        .set({
+          lastReconciledAt: new Date(),
+          lastReconcileErrorCode: "receipt_pending",
+          reconcileAttemptCount: sql`${settlementTransactions.reconcileAttemptCount} + 1`,
+          updatedAt: new Date(),
+        })
+        .where(eq(settlementTransactions.id, attempt.id));
+    }
     return {
       data: settlementExecutionResponse({
         ...expected,
@@ -4818,6 +4835,12 @@ async function finalizeSettlementAttempt(
       .set({
         errorMessage: verified.message,
         failureCode: verified.code,
+        lastReconciledAt: mode === "reconcile" ? new Date() : attempt.lastReconciledAt,
+        lastReconcileErrorCode: mode === "reconcile" ? verified.code : attempt.lastReconcileErrorCode,
+        reconcileAttemptCount:
+          mode === "reconcile"
+            ? sql`${settlementTransactions.reconcileAttemptCount} + 1`
+            : attempt.reconcileAttemptCount,
         status: verified.code === "transaction_reverted" ? "reverted" : "unknown",
         txHash: transactionHash,
         updatedAt: new Date(),
@@ -4869,6 +4892,12 @@ async function finalizeSettlementAttempt(
         eventTransferCount: verified.event.transferCount,
         eventTransfersHash: verified.event.transfersHash,
         failureCode: null,
+        lastReconciledAt: mode === "reconcile" ? now : attempt.lastReconciledAt,
+        lastReconcileErrorCode: null,
+        reconcileAttemptCount:
+          mode === "reconcile"
+            ? sql`${settlementTransactions.reconcileAttemptCount} + 1`
+            : attempt.reconcileAttemptCount,
         status: "confirmed",
         txHash: transactionHash,
         updatedAt: now,
