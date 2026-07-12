@@ -79,3 +79,18 @@ ON "delegated_authorization_permissions" ("proposal_id", "status");
 
 CREATE INDEX IF NOT EXISTS "delegated_authorization_permissions_expiry_status_idx"
 ON "delegated_authorization_permissions" ("expires_at", "status");
+
+ALTER TABLE "delegated_authorization_permissions" ENABLE ROW LEVEL SECURITY;
+
+-- This table contains private, server-only delegated-authorization metadata.
+-- No browser client may read or write it through the Supabase Data API.
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'anon') THEN
+    REVOKE ALL ON TABLE "delegated_authorization_permissions" FROM anon;
+  END IF;
+
+  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'authenticated') THEN
+    REVOKE ALL ON TABLE "delegated_authorization_permissions" FROM authenticated;
+  END IF;
+END $$;

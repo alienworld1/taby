@@ -1,5 +1,7 @@
 import "server-only";
 import { createRequire } from "node:module";
+import { isRemoteSignerConfigured } from "@/lib/account/zerodev/remoteSigner";
+import { getZeroDevAccountConfig } from "@/lib/account/zerodev/config";
 
 type DelegatedAuthorizationFeatureGate = {
   enabled: boolean;
@@ -9,6 +11,7 @@ type DelegatedAuthorizationFeatureGate = {
     | "permissions_package_unavailable"
     | "custody_unavailable"
     | "paymaster_proof_missing"
+    | "account_configuration_mismatch"
     | "ready";
 };
 
@@ -50,13 +53,23 @@ export function getDelegatedAuthorizationFeatureGate(): DelegatedAuthorizationFe
 
   if (
     process.env.TABY_DELEGATED_AUTHORIZATION_CUSTODY_MODE !== "remote_signer" ||
-    process.env.TABY_DELEGATED_AUTHORIZATION_REMOTE_SIGNER_READY !== "true"
+    process.env.TABY_DELEGATED_AUTHORIZATION_REMOTE_SIGNER_READY !== "true" ||
+    !isRemoteSignerConfigured()
   ) {
     return { enabled: false, reason: "custody_unavailable" };
   }
 
   if (process.env.TABY_DELEGATED_AUTHORIZATION_PAYMASTER_PROVEN !== "true") {
     return { enabled: false, reason: "paymaster_proof_missing" };
+  }
+
+  const config = getZeroDevAccountConfig();
+  if (
+    process.env.TABY_DELEGATED_AUTHORIZATION_CONFIG_HASH !== config.configHash ||
+    process.env.TABY_DELEGATED_AUTHORIZATION_KERNEL_VERSION !== config.kernelVersion ||
+    process.env.TABY_DELEGATED_AUTHORIZATION_ENTRY_POINT_VERSION !== config.entryPointVersion
+  ) {
+    return { enabled: false, reason: "account_configuration_mismatch" };
   }
 
   return { enabled: true, reason: "ready" };

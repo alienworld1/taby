@@ -10,6 +10,7 @@ import {
   uniqueIndex,
   uuid,
 } from "drizzle-orm/pg-core";
+import { sql } from "drizzle-orm";
 
 export const tabStatusEnum = pgEnum("tab_status", [
   "draft",
@@ -125,6 +126,22 @@ export const delegatedAuthorizationCustodyModeEnum = pgEnum(
   "delegated_authorization_custody_mode",
   ["remote_signer", "envelope_encrypted"],
 );
+export const actionIdempotencyStatusEnum = pgEnum("action_idempotency_status", [
+  "started",
+  "completed",
+  "failed",
+]);
+export const protectedActionEnum = pgEnum("protected_action", [
+  "lock_final_tab",
+  "authorize_final_tab",
+  "revoke_final_tab",
+  "cancel_final_tab",
+  "settle_final_tab",
+  "delegated_prepare",
+  "delegated_install",
+  "delegated_cancel",
+  "delegated_reconcile",
+]);
 
 export const users = pgTable(
   "users",
@@ -298,11 +315,46 @@ export const delegatedAuthorizationPermissions = pgTable(
     uniqueIndex("delegated_authorization_permissions_execution_userop_idx").on(
       table.executionUserOperationHash,
     ),
+    uniqueIndex("delegated_authorization_permissions_active_member_idx")
+      .on(table.proposalId, table.memberId)
+      .where(
+        sql`${table.status} in ('preparing', 'permission_pending', 'execution_submitted', 'unknown')`,
+      ),
   ],
 );
 
 export type DelegatedAuthorizationPermission =
   typeof delegatedAuthorizationPermissions.$inferSelect;
+
+export const actionIdempotencyRecords = pgTable(
+  "action_idempotency_records",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    actorUserId: uuid("actor_user_id").notNull().references(() => users.id),
+    tabId: uuid("tab_id").notNull().references(() => tabs.id),
+    proposalId: uuid("proposal_id").references(() => settlementProposals.id),
+    action: protectedActionEnum("action").notNull(),
+    idempotencyKey: text("idempotency_key").notNull(),
+    requestFingerprint: text("request_fingerprint").notNull(),
+    status: actionIdempotencyStatusEnum("status").default("started").notNull(),
+    resultReference: text("result_reference"),
+    createdAt: timestamp("created_at", { mode: "date", withTimezone: true }).defaultNow().notNull(),
+    expiresAt: timestamp("expires_at", { mode: "date", withTimezone: true }).notNull(),
+    updatedAt: timestamp("updated_at", { mode: "date", withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    uniqueIndex("action_idempotency_records_actor_action_key_idx").on(
+      table.actorUserId,
+      table.action,
+      table.idempotencyKey,
+    ),
+    index("action_idempotency_records_rate_limit_idx").on(
+      table.actorUserId,
+      table.action,
+      table.createdAt,
+    ),
+  ],
+);
 
 export const tabs = pgTable(
   "tabs",
