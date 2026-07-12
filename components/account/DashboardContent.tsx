@@ -193,7 +193,7 @@ export function DashboardContent() {
   if (status !== "signedIn") {
     return (
       <SignInPrompt
-        description="Use your email to keep your shared tabs and settlement wallet ready."
+        description="Use your email to keep your shared tabs and settlement approvals ready."
         title="Sign in to open your tabs."
       />
     );

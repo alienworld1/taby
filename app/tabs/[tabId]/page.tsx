@@ -18,7 +18,7 @@ export default async function TabPage({ params }: TabPageProps) {
   const { tabId } = await params;
 
   return (
-    <AppShell createActionLabel="Create tab" eyebrow="Shared tab" title="Tab details">
+    <AppShell createActionLabel="Create tab" eyebrow="Shared agreement" title="Your Final Tab">
       <TabDetailContent tabId={tabId} />
     </AppShell>
   );

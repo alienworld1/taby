@@ -25,7 +25,7 @@ export function SignInSheet() {
 
   return (
     <Sheet
-      description="Use your email to keep your tabs and settlement wallet ready."
+      description="Use your email to keep your tabs and settlement approvals ready."
       onOpenChange={closeSignIn}
       open={isSignInOpen}
       title="Start your tab."

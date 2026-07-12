@@ -7,7 +7,7 @@ export const metadata = {
 
 export default function DashboardPage() {
   return (
-    <AppShell createActionLabel="Create tab" eyebrow="Workspace" title="Your tabs">
+    <AppShell createActionLabel="Create tab" eyebrow="Shared agreements" title="Your tabs">
       <DashboardContent />
     </AppShell>
   );

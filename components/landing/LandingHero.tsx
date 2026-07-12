@@ -14,7 +14,7 @@ export function LandingHero() {
           Settle the whole tab together.
         </h1>
         <p className="mt-6 max-w-xl text-lg leading-8 text-muted sm:text-xl">
-          Agree on what counts, approve one Final Tab, and close shared expenses in one safe flow.
+          Agree on what counts, lock one final settlement your group can review, and close shared expenses together.
         </p>
         <div className="mt-8 flex flex-col gap-3 sm:flex-row">
           <AuthActionButton size="lg">Create a tab</AuthActionButton>
@@ -24,7 +24,7 @@ export function LandingHero() {
         </div>
         <p className="mt-6 flex items-center gap-2 text-sm text-muted">
           <FiCheckCircle aria-hidden="true" className="text-primary" />
-          Keep the focus on the group agreement, not payment mechanics.
+          Your group reviews one clear agreement before anything moves.
         </p>
       </div>
       <FinalTabHeroVisual />
