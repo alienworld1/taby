@@ -278,14 +278,14 @@ export function AuthorizationSheet({
       const clientError = rejected
         ? ({
             code: "database_unavailable",
-            message: "You cancelled the request. No approval was made.",
+            message: "You did not approve this action. Nothing changed.",
           } satisfies TabClientError)
         : toTabClientError(caught);
       setError({
         ...clientError,
         message:
           !rejected && clientError.code === "database_unavailable"
-            ? "Approval did not go through. Nothing changed. Try again."
+            ? "This approval could not be prepared. Nothing changed. Refresh status and try again."
             : clientError.message,
       });
     } finally {
@@ -328,8 +328,8 @@ export function AuthorizationSheet({
       setError({
         code: "database_unavailable",
         message: isUserRejectedError(caught)
-          ? "You cancelled the request. Your approval is still active."
-          : "Revocation did not go through. Nothing changed. Try again.",
+          ? "You did not approve this action. Nothing changed."
+          : "This approval could not be prepared. Nothing changed. Refresh status and try again.",
       });
     } finally {
       setActionState("idle");
@@ -340,6 +340,7 @@ export function AuthorizationSheet({
     <Sheet
       description="Review the amount, expiry, and Final Tab scope before approving."
       open={open}
+      preventClose={isBusy}
       title="Approve your share"
       onOpenChange={handleOpenChange}
     >
