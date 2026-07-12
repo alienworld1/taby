@@ -100,12 +100,21 @@ export const userOperationPurposeEnum = pgEnum("user_operation_purpose", [
   "final_tab_settlement",
   "delegated_permission_installation",
   "delegated_final_tab_authorization",
+  "settlement_withdrawal",
 ]);
 export const userOperationStatusEnum = pgEnum("user_operation_status", [
   "submitted",
   "confirmed",
   "failed",
   "timed_out",
+]);
+export const withdrawalTransactionStatusEnum = pgEnum("withdrawal_transaction_status", [
+  "created",
+  "submitted",
+  "confirmed",
+  "rejected",
+  "reverted",
+  "unknown",
 ]);
 export const delegatedAuthorizationPermissionStatusEnum = pgEnum(
   "delegated_authorization_permission_status",
@@ -232,6 +241,37 @@ export const userOperationRecords = pgTable(
 );
 
 export type UserOperationRecord = typeof userOperationRecords.$inferSelect;
+
+export const withdrawalTransactions = pgTable(
+  "withdrawal_transactions",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    userId: uuid("user_id").notNull().references(() => users.id),
+    settlementAccountId: uuid("settlement_account_id").notNull().references(() => userSettlementAccounts.id),
+    recipientAddress: text("recipient_address").notNull(),
+    amountBaseUnits: bigint("amount_base_units", { mode: "bigint" }).notNull(),
+    reservedAmountBaseUnits: bigint("reserved_amount_base_units", { mode: "bigint" }).notNull(),
+    idempotencyKey: text("idempotency_key").notNull(),
+    userOperationHash: text("user_operation_hash"),
+    txHash: text("tx_hash"),
+    status: withdrawalTransactionStatusEnum("status").notNull(),
+    failureCode: text("failure_code"),
+    errorMessage: text("error_message"),
+    lastReconciledAt: timestamp("last_reconciled_at", { mode: "date", withTimezone: true }),
+    reconcileAttemptCount: integer("reconcile_attempt_count").default(0).notNull(),
+    lastReconcileErrorCode: text("last_reconcile_error_code"),
+    createdAt: timestamp("created_at", { mode: "date", withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { mode: "date", withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    index("withdrawal_transactions_user_status_idx").on(table.userId, table.status),
+    uniqueIndex("withdrawal_transactions_idempotency_idx").on(table.userId, table.idempotencyKey),
+    uniqueIndex("withdrawal_transactions_userop_idx").on(table.userOperationHash),
+    uniqueIndex("withdrawal_transactions_chain_tx_idx").on(table.txHash),
+  ],
+);
+
+export type WithdrawalTransaction = typeof withdrawalTransactions.$inferSelect;
 
 export const delegatedAuthorizationPermissions = pgTable(
   "delegated_authorization_permissions",
