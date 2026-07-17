@@ -1,5 +1,7 @@
 # Taby
 
+![Taby banner](public/images/banner.png)
+
 Taby helps a group agree on one Final Tab, approve exact obligations, settle together, and keep a shared receipt.
 
 ## Local development

@@ -2,6 +2,7 @@ import Link from "next/link";
 import type { ReactNode } from "react";
 import { AuthActionButton } from "@/components/auth/AuthActionButton";
 import { AuthStatusControl } from "@/components/auth/AuthStatusControl";
+import { BrandMark } from "@/components/brand/BrandMark";
 import { appNavigation } from "@/lib/navigation";
 
 type AppShellProps = {
@@ -21,8 +22,8 @@ export function AppShell({
     <div className="min-h-screen bg-background">
       <header className="border-b border-outline-variant bg-surface-container-lowest/85 backdrop-blur">
         <div className="mx-auto flex max-w-6xl items-center justify-between gap-4 px-5 py-4 sm:px-8">
-          <Link className="text-xl font-bold text-primary-strong" href="/">
-            Taby
+          <Link className="inline-flex shrink-0" href="/">
+            <BrandMark className="h-10 w-10" variant="mark" />
           </Link>
           <div className="flex items-center gap-2">
             <nav aria-label="Main navigation" className="flex items-center gap-1">

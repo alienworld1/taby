@@ -24,6 +24,7 @@
 .DS_Store
 *.pem
 .agent
+*design.png
 
 # debug
 npm-debug.log*
