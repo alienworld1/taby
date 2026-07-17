@@ -241,7 +241,7 @@ export function SettlementPreviewSheet({
 
       if (!settlementAccountReady(account) || !settlementAccount || !magicProvider) {
         setExecutionStatus("idle");
-        setExecutionError("Preparing secure settlement. You will not need gas to continue.");
+        setExecutionError("Preparing settlement. Try again in a moment.");
         return;
       }
 
@@ -271,7 +271,7 @@ export function SettlementPreviewSheet({
         settlementAccount.settlementAddress.toLowerCase()
       ) {
         setExecutionStatus("idle");
-        setExecutionError("Preparing secure settlement. Refresh your settlement account and try again.");
+        setExecutionError("Preparing settlement. Refresh your settlement account and try again.");
         return;
       }
 

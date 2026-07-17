@@ -50,7 +50,7 @@ export function WithdrawalSheet({
     if (!parsed) return setError("Enter a USDC amount with up to 6 decimal places.");
     if (parsed > available) return setError("That amount is reserved for Final Tabs or exceeds your balance.");
     if (customRecipient && !/^0x[a-fA-F0-9]{40}$/.test(selectedRecipient)) {
-      return setError("Enter a valid EVM address.");
+      return setError("Enter a valid recipient address.");
     }
     setError(null);
     setReviewing(true);
@@ -82,7 +82,7 @@ export function WithdrawalSheet({
             <p className="mt-4 font-mono text-xs uppercase text-muted">To</p>
             <p className="mt-1 break-all font-mono text-sm text-foreground">{selectedRecipient}</p>
             <p className="mt-1 text-sm text-muted">
-              {customRecipient ? "Custom recipient" : "Your Magic sign-in wallet"}
+              {customRecipient ? "Custom recipient" : "Your sign-in wallet"}
             </p>
           </div>
           <div className="grid gap-2 text-sm text-muted">

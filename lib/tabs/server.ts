@@ -2438,7 +2438,7 @@ export async function recordTabAuthorization(input: {
       }
     } catch {
       return fail("database_unavailable", 503, [
-        "We could not reach Arbitrum Sepolia. Try again.",
+        "We could not check approval. Try again.",
       ]);
     }
 
@@ -2470,7 +2470,7 @@ export async function recordTabAuthorization(input: {
       !walletAddress
     ) {
       return fail("account_unavailable", 409, [
-        "This tab is linked to a different settlement wallet.",
+        "This tab is linked to a different settlement account.",
       ]);
     }
 
@@ -2539,7 +2539,7 @@ export async function recordTabAuthorization(input: {
       }
     } catch {
       return fail("database_unavailable", 503, [
-        "We could not reach Arbitrum Sepolia. Try again.",
+        "We could not check approval. Try again.",
       ]);
     }
 
@@ -2722,7 +2722,7 @@ export async function revokeTabAuthorization(input: {
         normalizeEvmAddress(authorization.walletAddress)
     ) {
       return fail("account_unavailable", 409, [
-        "This tab is linked to a different settlement wallet.",
+        "This tab is linked to a different settlement account.",
       ]);
     }
 
@@ -2786,7 +2786,7 @@ export async function revokeTabAuthorization(input: {
       }
     } catch {
       return fail("database_unavailable", 503, [
-        "We could not reach Arbitrum Sepolia. Try again.",
+        "We could not check approval. Try again.",
       ]);
     }
 
@@ -2899,7 +2899,7 @@ export async function createSettlementProposal(input: {
     }
 
     if (access.data.tab.networkChainId !== TABY_CHAIN_ID) {
-      return fail("configuration_missing", 409, ["Settlement is configured for Arbitrum Sepolia."]);
+      return fail("configuration_missing", 409, ["Settlement is not configured for this Final Tab."]);
     }
 
     if (access.data.tab.tokenAddress.toLowerCase() !== TABY_USDC_ADDRESS.toLowerCase()) {
@@ -3003,7 +3003,7 @@ export async function createSettlementProposal(input: {
 
     if (!coordinator?.walletAddress) {
       return fail("proposal_not_ready", 409, [
-        "A member in this Final Tab needs a settlement wallet before you can continue.",
+        "A member in this Final Tab needs a settlement account before you can continue.",
       ]);
     }
     const coordinatorWalletAddress = coordinator.walletAddress;
@@ -3018,7 +3018,7 @@ export async function createSettlementProposal(input: {
 
     if (missingTransferWallet) {
       return fail("proposal_not_ready", 409, [
-        "A member in this Final Tab needs a settlement wallet before you can continue.",
+        "A member in this Final Tab needs a settlement account before you can continue.",
       ]);
     }
 
@@ -3242,7 +3242,7 @@ export async function lockSettlementProposal(input: {
 
     if (!coordinator?.walletAddress) {
       return fail("proposal_not_ready", 409, [
-        "A member in this Final Tab needs a settlement wallet before you can continue.",
+        "A member in this Final Tab needs a settlement account before you can continue.",
       ]);
     }
     const coordinatorWalletAddress = coordinator.walletAddress;
@@ -3266,7 +3266,7 @@ export async function lockSettlementProposal(input: {
       });
     } catch {
       return fail("proposal_not_ready", 409, [
-        "A member in this Final Tab needs a settlement wallet before you can continue.",
+        "A member in this Final Tab needs a settlement account before you can continue.",
       ]);
     }
 
@@ -3286,7 +3286,7 @@ export async function lockSettlementProposal(input: {
 
     if (missingTransferMember) {
       return fail("proposal_not_ready", 409, [
-        "A member in this Final Tab needs a settlement wallet before you can continue.",
+        "A member in this Final Tab needs a settlement account before you can continue.",
       ]);
     }
 
@@ -3310,7 +3310,7 @@ export async function lockSettlementProposal(input: {
         normalizeEvmAddress(coordinatorWalletAddress)
     ) {
       return fail("account_unavailable", 409, [
-        "Preparing secure settlement. You will not need gas to continue.",
+        "Preparing settlement. Try again in a moment.",
       ]);
     }
 
@@ -3323,7 +3323,7 @@ export async function lockSettlementProposal(input: {
       });
     } catch {
       return fail("database_unavailable", 503, [
-        "We could not reach Arbitrum Sepolia. Try again.",
+        "We could not update this Final Tab. Try again.",
       ]);
     }
 
@@ -3343,7 +3343,7 @@ export async function lockSettlementProposal(input: {
 
         if (!onchainProposal) {
           return fail("stale_record", 409, [
-            "A Final Tab is already registered onchain. Cancel it before creating a fresh one.",
+            "A Final Tab is already registered. Cancel it before creating a fresh one.",
           ]);
         }
 
@@ -3705,7 +3705,7 @@ export async function cancelSettlementProposal(input: {
         !tabKey
       ) {
         return fail("account_unavailable", 409, [
-          "We could not cancel this Final Tab onchain. Try again before creating a fresh one.",
+          "We could not cancel this Final Tab. Try again before creating a fresh one.",
         ]);
       }
 
@@ -3720,7 +3720,7 @@ export async function cancelSettlementProposal(input: {
         });
       } catch {
         return fail("database_unavailable", 503, [
-          "We could not reach Arbitrum Sepolia. Try again.",
+          "We could not update this Final Tab. Try again.",
         ]);
       }
 
@@ -3729,7 +3729,7 @@ export async function cancelSettlementProposal(input: {
         activeFinalTab.proposalHash.toLowerCase() !== proposal.proposalHash.toLowerCase()
       ) {
         return fail("stale_record", 409, [
-          "Another Final Tab is active onchain. Refresh before changing this one.",
+          "Another Final Tab is active. Refresh before changing this one.",
         ]);
       }
 
@@ -3823,12 +3823,12 @@ export async function cancelSettlementProposal(input: {
 
         if (!cancelled) {
           return fail("invalid_transition", 409, [
-            "We could not cancel this Final Tab onchain. Try again before creating a fresh one.",
+            "We could not cancel this Final Tab. Try again before creating a fresh one.",
           ]);
         }
       } catch {
         return fail("database_unavailable", 503, [
-          "We could not reach Arbitrum Sepolia. Try again.",
+          "We could not update this Final Tab. Try again.",
         ]);
       }
     }
@@ -4045,7 +4045,7 @@ export async function previewSettlementProposal(input: {
         previewBlocker({
           id: "chain-mismatch",
           kind: "configuration_missing",
-          message: "Settlement is configured for Arbitrum Sepolia.",
+          message: "Settlement is not configured for this Final Tab.",
         }),
       );
     }
@@ -4162,7 +4162,7 @@ export async function previewSettlementProposal(input: {
             previewBlocker({
               id: "proposal-wallet-state",
               kind: "missing_wallet",
-              message: "A member in this Final Tab needs a settlement wallet before you can continue.",
+              message: "A member in this Final Tab needs a settlement account before you can continue.",
             }),
           );
         }
@@ -4234,7 +4234,7 @@ export async function previewSettlementProposal(input: {
             id: `debtor-wallet-${debtor.id}`,
             kind: "missing_wallet",
             memberId: debtor.id,
-            message: `${debtor.displayName} needs a wallet before settlement can continue.`,
+            message: `${debtor.displayName} needs a settlement account before settlement can continue.`,
           }),
         );
       }
@@ -4245,7 +4245,7 @@ export async function previewSettlementProposal(input: {
             id: `creditor-wallet-${creditor.id}`,
             kind: "missing_wallet",
             memberId: creditor.id,
-            message: `${creditor.displayName} needs a wallet before settlement can continue.`,
+            message: `${creditor.displayName} needs a settlement account before settlement can continue.`,
           }),
         );
       }
@@ -4552,7 +4552,7 @@ async function prepareSettlementAttempt(input: {
           settlementBlocker({
             id: "account-not-ready",
             kind: "account_unavailable",
-            message: "Preparing secure settlement. You will not need gas to continue.",
+            message: "Preparing settlement. Try again in a moment.",
           }),
         ],
         state: "idle",
@@ -4569,7 +4569,7 @@ async function prepareSettlementAttempt(input: {
           settlementBlocker({
             id: "account-not-ready",
             kind: "account_unavailable",
-            message: "Preparing secure settlement. You will not need gas to continue.",
+            message: "Preparing settlement. Try again in a moment.",
           }),
         ],
         state: "idle",
@@ -5146,7 +5146,7 @@ async function buildFinalSettlementBlockers(
       settlementBlocker({
         id: "chain-mismatch",
         kind: "configuration_missing",
-        message: "Settlement is configured for Arbitrum Sepolia.",
+        message: "Settlement is not configured for this Final Tab.",
       }),
     );
   }
@@ -5181,7 +5181,7 @@ async function buildFinalSettlementBlockers(
       settlementBlocker({
         id: "settlement-account-mismatch",
         kind: "account_unavailable",
-        message: "This Final Tab is linked to a different settlement wallet.",
+        message: "This Final Tab is linked to a different settlement account.",
       }),
     );
   }
@@ -5236,7 +5236,7 @@ async function buildFinalSettlementBlockers(
         settlementBlocker({
           id: "active-proposal-mismatch",
           kind: "stale_proposal",
-          message: "Something changed onchain. Refresh before settling.",
+          message: "Something changed. Refresh before settling.",
         }),
       );
     }
@@ -5245,7 +5245,7 @@ async function buildFinalSettlementBlockers(
       settlementBlocker({
         id: "chain-unavailable",
         kind: "chain_unavailable",
-        message: "We could not check Arbitrum right now. Refresh status.",
+        message: "We could not check settlement. Refresh status.",
       }),
     );
     return blockers;
@@ -5276,7 +5276,7 @@ async function buildFinalSettlementBlockers(
           id: `wallet-${transfer.id}`,
           kind: "missing_wallet",
           memberId: debtor?.id ?? creditor?.id ?? null,
-          message: `${debtor?.displayName ?? creditor?.displayName ?? "A member"} needs a wallet before settlement can continue.`,
+          message: `${debtor?.displayName ?? creditor?.displayName ?? "A member"} needs a settlement account before settlement can continue.`,
         }),
       );
     }
@@ -5371,7 +5371,7 @@ async function buildFinalSettlementBlockers(
             id: `balance-${memberId}`,
             kind: "insufficient_balance",
             memberId,
-            message: `${displayName} needs ${formatUsdcAmount(owed - balance)} USDC at ${shortAddress(walletAddress)} before settlement can finish.`,
+            message: `${displayName} needs ${formatUsdcAmount(owed - balance)} USDC before settlement can finish.`,
           }),
         );
       }
@@ -5382,7 +5382,7 @@ async function buildFinalSettlementBlockers(
           id: `chain-check-${memberId}`,
           kind: "chain_unavailable",
           memberId,
-          message: "We could not check Arbitrum right now. Refresh status.",
+          message: "We could not check settlement. Refresh status.",
         }),
       );
     }
@@ -5709,10 +5709,6 @@ function formatUsdcAmount(amountBaseUnits: bigint) {
   const fraction = (absolute % BigInt(1_000_000)).toString().padStart(6, "0").slice(0, 2);
 
   return `${sign}${whole.toString()}.${fraction}`;
-}
-
-function shortAddress(address: string) {
-  return address.length > 14 ? `${address.slice(0, 6)}...${address.slice(-4)}` : address;
 }
 
 export async function recordSettlementTransaction(input: {

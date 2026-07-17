@@ -43,7 +43,7 @@ export function SignInSheet() {
                 <FiCheckCircle aria-hidden="true" className="text-primary-strong" />
                 <p className="font-semibold">Your Taby account is ready.</p>
               </div>
-              <StatusChip tone="success">Wallet ready</StatusChip>
+              <StatusChip tone="success">Account ready</StatusChip>
             </div>
           </div>
         ) : null}

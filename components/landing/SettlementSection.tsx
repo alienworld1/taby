@@ -11,7 +11,7 @@ export function SettlementSection() {
             Two transfers close the whole tab.
           </h2>
           <p className="mx-auto mt-6 max-w-2xl text-lg leading-8 text-muted">
-            Taby turns the group&apos;s accepted obligations into a simpler final settlement. Every transfer completes together—or none does.
+            Taby turns the group&apos;s agreed obligations into a simpler final settlement. Every transfer completes together—or none does.
           </p>
         </div>
 

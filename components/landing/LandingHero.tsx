@@ -14,7 +14,7 @@ export function LandingHero() {
           Settle the whole tab together.
         </h1>
         <p className="mt-6 max-w-xl text-lg leading-8 text-muted sm:text-xl">
-          Agree on what counts, lock one final settlement your group can review, and close shared expenses together.
+          Agree on what counts, approve one Final Tab, and close shared expenses in one safe flow.
         </p>
         <div className="mt-8 flex flex-col gap-3 sm:flex-row">
           <AuthActionButton size="lg">Create a tab</AuthActionButton>

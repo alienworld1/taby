@@ -97,7 +97,7 @@ export function SettlementSummary({
           Final Tab evidence
         </h2>
         <p className="mt-1 text-sm leading-6 text-muted">
-          Accepted expenses created these obligations. The Final Tab above is the group’s agreement.
+          Agreed expenses created these obligations. The Final Tab above is the group’s agreement.
         </p>
       </div>
 

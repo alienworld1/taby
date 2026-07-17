@@ -120,7 +120,7 @@ export function SettlementProposalSection({
     !detail.tab.settlementContractAddress
       ? "Settlement is not configured yet."
       : detail.tab.networkChainId !== TABY_CHAIN_ID
-        ? "Settlement is configured for Arbitrum Sepolia."
+        ? "Settlement is not configured for this Final Tab."
         : detail.tab.tokenAddress.toLowerCase() !== TABY_USDC_ADDRESS.toLowerCase()
           ? "Settlement is configured for USDC only."
           : null;
@@ -170,7 +170,7 @@ export function SettlementProposalSection({
         if (!account?.settlementAccount) {
           throw {
             code: "account_unavailable",
-            message: "Preparing secure settlement. You will not need gas to continue.",
+            message: "Preparing settlement. Try again in a moment.",
           } satisfies TabClientError;
         }
 
@@ -179,7 +179,7 @@ export function SettlementProposalSection({
         if (!magicProvider) {
           throw {
             code: "account_unavailable",
-            message: "Preparing secure settlement. You will not need gas to continue.",
+            message: "Preparing settlement. Try again in a moment.",
           } satisfies TabClientError;
         }
 
@@ -204,7 +204,7 @@ export function SettlementProposalSection({
         ) {
           throw {
             code: "account_unavailable",
-            message: "Preparing secure settlement. Refresh your settlement account and try again.",
+            message: "Preparing settlement. Refresh your settlement account and try again.",
           } satisfies TabClientError;
         }
 
@@ -226,7 +226,7 @@ export function SettlementProposalSection({
           if (!account?.settlementAccount) {
             throw {
               code: "account_unavailable",
-              message: "We could not cancel this Final Tab onchain. Try again before creating a fresh one.",
+              message: "We could not cancel this Final Tab. Try again before creating a fresh one.",
             } satisfies TabClientError;
           }
 
@@ -235,7 +235,7 @@ export function SettlementProposalSection({
           if (!magicProvider) {
             throw {
               code: "account_unavailable",
-              message: "We could not cancel this Final Tab onchain. Try again before creating a fresh one.",
+              message: "We could not cancel this Final Tab. Try again before creating a fresh one.",
             } satisfies TabClientError;
           }
 
@@ -261,7 +261,7 @@ export function SettlementProposalSection({
           ) {
             throw {
               code: "account_unavailable",
-              message: "Preparing secure settlement. Refresh your settlement account and try again.",
+              message: "Preparing settlement. Refresh your settlement account and try again.",
             } satisfies TabClientError;
           }
 

@@ -54,19 +54,19 @@ export function FinalTabReceiptProofDrawer({ proof }: FinalTabReceiptProofDrawer
           </div>
           <dl className="mt-3 grid gap-2 text-sm leading-6">
             <div className="flex flex-wrap justify-between gap-2 border-b border-outline-variant pb-2">
-              <dt className="text-muted">Proposal</dt>
+              <dt className="text-muted">Final Tab</dt>
               <dd className="break-all font-mono text-foreground">{shortHash(proof.proposalHash)}</dd>
             </div>
             <div className="flex flex-wrap justify-between gap-2 border-b border-outline-variant pb-2">
-              <dt className="text-muted">Authorized debtors</dt>
+              <dt className="text-muted">Approved members</dt>
               <dd className="break-words text-right font-semibold text-foreground">
                 {proof.authorizedDebtorCount > 0
                   ? proof.authorizedDebtors.join(", ")
-                  : "No debtor authorization needed"}
+                  : "No member approval needed"}
               </dd>
             </div>
             <div className="flex flex-wrap justify-between gap-2 border-b border-outline-variant pb-2">
-              <dt className="text-muted">Authorization expiry used</dt>
+              <dt className="text-muted">Approval expiry</dt>
               <dd className="text-foreground">
                 {proof.authorizationExpiryUsed
                   ? new Intl.DateTimeFormat("en", {

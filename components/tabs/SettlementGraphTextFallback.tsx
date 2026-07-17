@@ -19,7 +19,7 @@ export function SettlementGraphTextFallback({
   reducedMotion,
 }: SettlementGraphTextFallbackProps) {
   const edges = mode === "before" ? data.beforeEdges : data.afterEdges;
-  const title = mode === "before" ? "Confirmed IOUs" : "Final settlements";
+  const title = mode === "before" ? "Confirmed IOUs" : "Final transfers";
   const emptyCopy =
     mode === "after"
       ? "The confirmed expenses cancel out, so there is nothing to settle."

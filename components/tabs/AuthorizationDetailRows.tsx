@@ -34,7 +34,7 @@ export function AuthorizationDetailRows({
   return (
     <div className="grid gap-3">
       <AuthorizationDetailRow label="You owe" value={formatUsdc(owedBaseUnits)} strong />
-      <AuthorizationDetailRow label="Maximum approved" value={formatUsdc(capBaseUnits)} strong />
+      <AuthorizationDetailRow label="Maximum" value={formatUsdc(capBaseUnits)} strong />
       <AuthorizationDetailRow
         label="Exact share"
         value={formatUsdc(maxSingleSettlementBaseUnits)}

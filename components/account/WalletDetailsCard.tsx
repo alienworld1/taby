@@ -24,7 +24,7 @@ export function WalletDetailsCard({ account, icon }: WalletDetailsCardProps) {
           <div>
             <h2 className="text-lg font-semibold">Settlement wallet</h2>
             <p className="mt-1 text-sm leading-6 text-muted">
-              Send USDC to the secure settlement address below before a Final Tab closes.
+              Send USDC to the settlement address below before a Final Tab closes.
             </p>
           </div>
         </div>
@@ -37,7 +37,7 @@ export function WalletDetailsCard({ account, icon }: WalletDetailsCardProps) {
           <p className="break-all rounded-md bg-surface-container-low p-4 font-mono text-sm text-muted">
             {account.settlementAccount?.delegationStatus === "ready"
               ? account.settlementAccount.settlementAddress
-              : "Preparing secure settlement"}
+              : "Preparing settlement"}
           </p>
         <details className="mt-3 rounded-md border border-outline-variant bg-surface-container-low px-3 py-2">
           <summary className="cursor-pointer text-sm font-semibold text-muted">

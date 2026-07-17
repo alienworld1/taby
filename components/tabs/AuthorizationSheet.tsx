@@ -162,7 +162,7 @@ export function AuthorizationSheet({
     } catch {
       setError({
         code: "database_unavailable",
-        message: "We could not reach Arbitrum Sepolia. Try again.",
+        message: "We could not check approval. Try again.",
       });
     } finally {
       setActionState("idle");
@@ -209,7 +209,7 @@ export function AuthorizationSheet({
     if (!magicProvider) {
       throw {
         code: "account_unavailable",
-        message: "Preparing secure settlement. You will not need gas to continue.",
+        message: "Preparing settlement. Try again in a moment.",
       } satisfies TabClientError;
     }
 
@@ -224,7 +224,7 @@ export function AuthorizationSheet({
     if (settlementClient.settlementAddress.toLowerCase() !== walletAddress.toLowerCase()) {
       throw {
         code: "account_unavailable",
-        message: "Preparing secure settlement. Refresh your settlement account and try again.",
+        message: "Preparing settlement. Refresh your settlement account and try again.",
       } satisfies TabClientError;
     }
 

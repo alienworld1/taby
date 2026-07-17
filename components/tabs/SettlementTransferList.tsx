@@ -21,7 +21,7 @@ export function SettlementTransferList({ membersById, transfers }: SettlementTra
 
   return (
     <div className="grid gap-2">
-      <h3 className="text-sm font-semibold text-foreground">Final settlements</h3>
+      <h3 className="text-sm font-semibold text-foreground">Final transfers</h3>
       <div className="divide-y divide-outline-variant rounded-md border border-outline-variant bg-surface-container-lowest">
         {transfers.map((transfer) => {
           const debtorName = membersById.get(transfer.fromMemberId)?.displayName ?? "Someone";

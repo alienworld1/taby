@@ -222,14 +222,14 @@ function normalizeSettlementBatchError(error: unknown) {
   const selector = revertData.slice(0, 10).toLowerCase();
   const normalized = new Error(
     selector === "0xdb111a96"
-      ? "This Final Tab is no longer active onchain. Refresh status."
+      ? "This Final Tab is no longer active. Refresh status."
       : selector === "0x9f4b444f"
-        ? "This Final Tab is already registered onchain. Refresh status."
+        ? "This Final Tab is already registered. Refresh status."
         : /revert|execution|simulation/i.test(message)
       ? "Approval did not go through. Nothing changed. Try again."
       : /sponsor|paymaster|gas/i.test(message)
-        ? "Gas sponsorship is not available right now. Try again in a moment."
-        : "We could not confirm the secure settlement request. Try again.",
+        ? "Settlement is not available right now. Try again in a moment."
+        : "We could not confirm the settlement request. Try again.",
   );
 
   return normalized;

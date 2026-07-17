@@ -15,9 +15,9 @@ export function accountErrorMessage(code: AccountErrorCode | null) {
     case "zerodev_config_mismatch":
       return "Settlement is not configured for this network yet.";
     case "zerodev_not_ready":
-      return "We could not prepare secure settlement. Try again before approving this Final Tab.";
+      return "We could not prepare settlement. Try again before approving this Final Tab.";
     case "sponsorship_unavailable":
-      return "Gas sponsorship is not available right now. Try again in a moment.";
+      return "Settlement is not available right now. Try again in a moment.";
     default:
       return "Something got in the way. Try again.";
   }

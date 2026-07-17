@@ -29,7 +29,7 @@ export function SettlementFundingPanel({ account }: { account: Account }) {
       if (!didToken) throw new Error("Sign in again to refresh your balance.");
       const response = await fetch("/api/account/funding", { headers: { Authorization: `Bearer ${didToken}` }, cache: "no-store" });
       const payload = (await response.json()) as { funding?: SettlementFundingSnapshot; code?: string };
-      if (!response.ok || !payload.funding) throw new Error(payload.code === "chain_unavailable" ? "We could not check Arbitrum right now. Try again." : "Your settlement wallet is not ready.");
+      if (!response.ok || !payload.funding) throw new Error(payload.code === "chain_unavailable" ? "We could not check your balance. Try again." : "Your settlement wallet is not ready.");
       setFunding(payload.funding);
     } catch (refreshError) {
       setError(refreshError instanceof Error ? refreshError.message : "We could not refresh your funding status.");
@@ -120,7 +120,7 @@ function Metric({ label, value }: { label: string; value: string }) {
 function withdrawalMessage(withdrawal: WithdrawalResponse) {
   if (withdrawal.status === "confirmed") return "Withdrawal confirmed.";
   if (withdrawal.status === "reverted") return "Withdrawal did not go through. Nothing moved.";
-  if (withdrawal.status === "rejected") return "Gas sponsorship was not available. Nothing moved.";
-  if (withdrawal.status === "unknown") return "We are still checking this withdrawal on Arbitrum.";
+  if (withdrawal.status === "rejected") return "Withdrawal could not start. Nothing moved.";
+  if (withdrawal.status === "unknown") return "We are still checking this withdrawal.";
   return "Withdrawal is pending confirmation.";
 }

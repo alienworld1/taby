@@ -76,7 +76,7 @@ function failedOperationMessage(purpose: string) {
     case "final_tab_revocation":
       return "Revocation did not go through. Nothing changed. Try again.";
     case "final_tab_cancellation":
-      return "We could not cancel this Final Tab onchain. Try again before creating a fresh one.";
+      return "We could not cancel this Final Tab. Try again before creating a fresh one.";
     case "final_tab_settlement":
       return "Settlement did not go through. Nothing moved.";
     case "settlement_withdrawal":

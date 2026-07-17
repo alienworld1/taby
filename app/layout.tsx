@@ -22,7 +22,7 @@ export const metadata: Metadata = {
     template: "%s | Taby",
   },
   description:
-    "Agree on what counts, approve one final settlement, and close shared expenses in one safe flow.",
+    "Agree on what counts, approve one Final Tab, and close shared expenses in one safe flow.",
   applicationName: "Taby",
   openGraph: {
     title: "Taby",

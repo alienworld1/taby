@@ -35,7 +35,7 @@ export function SettlementPreviewSummary({
             <div className="mt-3 flex flex-wrap items-center gap-2 text-sm leading-6 text-muted">
               <FiShield aria-hidden="true" className="text-primary" />
               <span>
-                Maximum approved {formatUsdc(snapshot.currentMemberOutcome.capBaseUnits)}
+                Maximum {formatUsdc(snapshot.currentMemberOutcome.capBaseUnits)}
               </span>
               {expiry ? <span>Expires {expiry}</span> : null}
             </div>

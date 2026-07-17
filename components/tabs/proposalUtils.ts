@@ -143,7 +143,7 @@ export function buildProposalBlockers(input: {
         blocksLock: true,
         id: `wallet-${memberId}`,
         kind: "missing_wallet",
-        message: `${member?.displayName ?? "A member"} needs a wallet before settlement can continue.`,
+        message: `${member?.displayName ?? "A member"} needs a settlement account before settlement can continue.`,
         severity: "blocking",
       });
     }
@@ -305,7 +305,7 @@ function authorizationReadinessBlocker(readiness: AuthorizationReadinessResponse
     case "missing_wallet":
       return {
         kind: "missing_wallet" as const,
-        message: `${readiness.displayName} needs a wallet before settlement can continue.`,
+        message: `${readiness.displayName} needs a settlement account before settlement can continue.`,
         severity: "blocking" as const,
       };
     case "stale":

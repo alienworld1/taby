@@ -35,7 +35,7 @@ export function tabErrorMessage(code: TabErrorCode) {
     case "configuration_missing":
       return "We could not prepare settlement right now. Refresh status or try again later.";
     case "account_unavailable":
-      return "Your secure settlement account is not ready yet. Refresh status to continue.";
+      return "Your settlement account is not ready yet. Refresh status to continue.";
     case "settlement_engine_unavailable":
       return "We could not prepare the Final Tab.";
     case "stale_record":

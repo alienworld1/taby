@@ -36,9 +36,9 @@ function getStatus(readiness: SettlementAccountReadiness | null) {
   if (!readiness || readiness.delegationStatus === "not_initialized") {
     return {
       chip: "Preparing",
-      helper: "This usually takes a moment. You will not need gas to continue.",
+      helper: "This usually takes a moment.",
       icon: <FiClock aria-hidden="true" />,
-      title: "Preparing secure settlement",
+      title: "Preparing settlement",
       tone: "pending" as const,
     };
   }
@@ -46,9 +46,9 @@ function getStatus(readiness: SettlementAccountReadiness | null) {
   if (readiness.delegationStatus === "ready") {
     return {
       chip: "Ready",
-      helper: "This is the address that needs USDC for Final Tab settlement. You still do not need gas.",
+      helper: "This address needs USDC before a Final Tab can settle.",
       icon: <FiCheckCircle aria-hidden="true" />,
-      title: "Secure settlement ready",
+      title: "Settlement ready",
       tone: "success" as const,
     };
   }
@@ -56,9 +56,9 @@ function getStatus(readiness: SettlementAccountReadiness | null) {
   if (readiness.paymasterPolicyStatus === "rejected") {
     return {
       chip: "Retry needed",
-      helper: "Gas sponsorship is not available right now. Try again in a moment.",
+      helper: "Settlement is not available right now. Try again in a moment.",
       icon: <FiAlertCircle aria-hidden="true" />,
-      title: "Secure settlement paused",
+      title: "Settlement paused",
       tone: "warning" as const,
     };
   }
@@ -68,16 +68,16 @@ function getStatus(readiness: SettlementAccountReadiness | null) {
       chip: "Needs review",
       helper: "We updated your settlement account. Existing locked tabs need a fresh Final Tab before approval.",
       icon: <FiShield aria-hidden="true" />,
-      title: "Secure settlement needs review",
+      title: "Settlement needs review",
       tone: "warning" as const,
     };
   }
 
   return {
     chip: "Try again",
-    helper: "We could not prepare secure settlement. Try again before approving this Final Tab.",
+    helper: "We could not prepare settlement. Try again before approving this Final Tab.",
     icon: <FiAlertCircle aria-hidden="true" />,
-    title: "Secure settlement paused",
+    title: "Settlement paused",
     tone: "error" as const,
   };
 }

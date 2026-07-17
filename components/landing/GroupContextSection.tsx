@@ -24,7 +24,7 @@ export function GroupContextSection() {
         <div className="overflow-hidden rounded-xl border border-outline-variant bg-background shadow-soft">
           <div className="flex items-center justify-between border-b border-outline-variant px-5 py-4 sm:px-6">
             <div className="flex items-center gap-2 font-semibold">
-          <FiUsers className="text-primary" /> ETH Lisbon Team · illustrative scenario
+          <FiUsers className="text-primary" /> Project team
             </div>
             <span className="font-mono text-xs text-muted">4 members</span>
           </div>
@@ -41,7 +41,7 @@ export function GroupContextSection() {
                   </div>
                 </div>
                 <div className="flex items-center gap-2 font-mono text-xs text-muted">
-                  <FiCreditCard /> Local payment rail
+                  <FiCreditCard /> Local payment app
                 </div>
               </div>
             ))}

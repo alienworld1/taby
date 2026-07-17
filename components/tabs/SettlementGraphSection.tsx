@@ -37,7 +37,7 @@ export function SettlementGraphSection({
   const [selectedElementId, setSelectedElementId] = useState<string | null>(null);
   const modeHelper =
     mode === "before"
-      ? "Accepted expenses created these obligations."
+      ? "Agreed expenses created these obligations."
       : "These final transfers close the agreed Final Tab.";
   const canRenderCanvas = graphResult.ok && graphData.members.length >= 2;
   const isEven = settlement.settlementCount === 0;

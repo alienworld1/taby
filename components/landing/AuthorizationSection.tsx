@@ -40,7 +40,7 @@ export function AuthorizationSection() {
               })}
             </div>
             <div className="mt-6 rounded-2xl bg-primary px-5 py-3 text-center font-semibold text-on-primary">
-              Approve your exact amount
+              Approve your amount
             </div>
           </div>
         </div>
@@ -54,7 +54,7 @@ export function AuthorizationSection() {
             Each person approves only their part of one locked Final Tab. The maximum is exact, the approval expires, and it can be revoked before settlement.
           </p>
           <p className="mt-8 border-l-2 border-coral pl-5 text-base font-semibold leading-7 text-primary-strong">
-            No unlimited approval. No ambiguous request. No change can reuse an old authorization.
+            No unlimited approval. No ambiguous request. No change can reuse an old approval.
           </p>
         </div>
       </div>

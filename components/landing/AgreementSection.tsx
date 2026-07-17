@@ -18,7 +18,7 @@ export function AgreementSection() {
               Only agreed expenses cross the line.
             </h2>
             <p className="mt-6 max-w-lg text-lg leading-8 text-primary-fixed">
-              A disputed item stays visible, but it never enters the Final Tab. The group settles the accepted state—not a guess, and not an unfinished conversation.
+              A disputed item stays visible, but it never enters the Final Tab. The group settles what it agreed—not a guess or an unfinished conversation.
             </p>
           </div>
 

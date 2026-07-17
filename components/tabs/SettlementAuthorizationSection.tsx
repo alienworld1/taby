@@ -146,7 +146,7 @@ export function SettlementAuthorizationSection({
             Final Tab approval
           </h2>
           <p className="mt-1 text-sm leading-6 text-muted">
-            Each debtor approves only their exact share for this locked Final Tab.
+            Each person who owes approves their exact share for this locked Final Tab.
           </p>
         </div>
         {readinessItems.length > 0 && readinessItems.every((item) => !item.blocksSettlement) ? (
@@ -187,7 +187,7 @@ export function SettlementAuthorizationSection({
               </div>
               {isDebtor ? (
                 <div className="text-left sm:text-right">
-                  <p className="text-sm font-semibold text-muted">Maximum approved</p>
+                  <p className="text-sm font-semibold text-muted">Maximum</p>
                   <p className="mt-1 text-lg font-semibold text-foreground">
                     {formatUsdc(
                       currentReadiness?.contractAuthorizationAmountBaseUnits ??
@@ -228,7 +228,7 @@ export function SettlementAuthorizationSection({
           </div>
 
           <div className="grid gap-2">
-            <h3 className="text-sm font-semibold text-foreground">Debtor readiness</h3>
+            <h3 className="text-sm font-semibold text-foreground">Group approval</h3>
             <AuthorizationReadinessList
               items={readinessItems}
               reducedMotion={reducedMotion}
@@ -315,11 +315,11 @@ function getHelperCopy(input: {
   }
 
   if (!input.settlementAccountReady) {
-    return "Preparing secure settlement. You will not need gas to continue.";
+    return "Preparing settlement. Try again in a moment.";
   }
 
   if (!input.normalizedAccountWallet) {
-    return "We could not load your settlement wallet. Try again in a moment.";
+    return "We could not load your settlement account. Try again in a moment.";
   }
 
   return "Only this Final Tab can use this approval.";

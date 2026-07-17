@@ -56,7 +56,7 @@ export function AccountProfileCard({ account }: AccountProfileCardProps) {
         <motion.div animate={{ opacity: 1, y: 0 }} initial={{ opacity: 0, y: -4 }}>
           <StatusChip tone="success">
             <FiCheck aria-hidden="true" className="mr-1" />
-            Wallet ready
+            Account ready
           </StatusChip>
         </motion.div>
       </div>
