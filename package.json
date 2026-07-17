@@ -7,7 +7,8 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "test:settlement": "tsc --rootDir . --outDir /tmp/taby-settlement-tests --module commonjs --target ES2022 --moduleResolution node --noEmit false --skipLibCheck lib/tabs/settlement.ts lib/tabs/settlement.test.ts && NODE_PATH=$PWD/node_modules node /tmp/taby-settlement-tests/lib/tabs/settlement.test.js"
+    "test:settlement": "tsc --rootDir . --outDir /tmp/taby-settlement-tests --module commonjs --target ES2022 --moduleResolution node --noEmit false --skipLibCheck lib/tabs/settlement.ts lib/tabs/settlement.test.ts && NODE_PATH=$PWD/node_modules node /tmp/taby-settlement-tests/lib/tabs/settlement.test.js",
+    "demo:preflight": "node scripts/dev-preflight-eth-lisbon-team.mjs"
   },
   "dependencies": {
     "@magic-sdk/admin": "^2.8.2",
