@@ -1,6 +1,6 @@
 "use client";
 
-import { createContext, useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
+import { createContext, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import { Magic, type MagicUserMetadata } from "magic-sdk";
 import type { EIP1193Provider } from "viem";
@@ -23,6 +23,7 @@ type AuthContextValue = {
   }) => Promise<T>;
   openSignIn: () => void;
   retryAccountSetup: () => Promise<void>;
+  retrySettlementAccount: () => Promise<void>;
   signIn: (options?: { redirectToDashboard?: boolean }) => Promise<void>;
   signOut: () => Promise<void>;
   updateDisplayName: (displayName: string) => Promise<{ error?: string; ok: boolean }>;
@@ -77,6 +78,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [status, setStatus] = useState<AuthStatus>(() =>
     process.env.NEXT_PUBLIC_MAGIC_PUBLISHABLE_KEY ? "initializing" : "error",
   );
+  const settlementPreparations = useRef(new Map<string, Promise<void>>());
 
   useEffect(() => {
     const publishableKey = process.env.NEXT_PUBLIC_MAGIC_PUBLISHABLE_KEY;
@@ -110,6 +112,54 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const magicReady = Boolean(magic);
+
+  const prepareSettlementAccountForUser = useCallback(
+    async (baseAccount: AccountResponse, magicClient: Magic) => {
+      const existingPreparation = settlementPreparations.current.get(baseAccount.id);
+
+      if (existingPreparation) {
+        return existingPreparation;
+      }
+
+      const preparation = (async () => {
+        const didToken = await magicClient.user.generateIdToken({ lifespan: 900 }).catch(() => null);
+
+        if (!didToken || !magicClient.rpcProvider) {
+          return;
+        }
+
+        const { prepareSettlementAccount } = await import("@/lib/account/zerodev/prepare");
+        const result = await prepareSettlementAccount({
+          didToken,
+          magicProvider: magicClient.rpcProvider,
+          magicWalletAddress: baseAccount.walletAddress,
+        });
+
+        const readiness = result.readiness;
+
+        if (!readiness) {
+          return;
+        }
+
+        setAccount((currentAccount) =>
+          currentAccount?.id === baseAccount.id
+            ? { ...currentAccount, settlementAccount: readiness }
+            : currentAccount,
+        );
+      })();
+
+      settlementPreparations.current.set(baseAccount.id, preparation);
+
+      try {
+        await preparation;
+      } finally {
+        if (settlementPreparations.current.get(baseAccount.id) === preparation) {
+          settlementPreparations.current.delete(baseAccount.id);
+        }
+      }
+    },
+    [],
+  );
 
   const setupAccount = useCallback(
     async (magicClient: Magic) => {
@@ -170,6 +220,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setStatus("signedIn");
         setErrorCode(null);
         setIsSignInOpen(false);
+        void prepareSettlementAccountForUser(payload.account, magicClient);
         return true;
       } catch {
         setStatus("error");
@@ -177,7 +228,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         return false;
       }
     },
-    [],
+    [prepareSettlementAccountForUser],
   );
 
   useEffect(() => {
@@ -263,6 +314,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       router.push("/dashboard");
     }
   }, [magic, router, setupAccount, signIn]);
+
+  const retrySettlementAccount = useCallback(async () => {
+    if (!magic || !account) {
+      return;
+    }
+
+    await prepareSettlementAccountForUser(account, magic);
+  }, [account, magic, prepareSettlementAccountForUser]);
 
   const signOut = useCallback(async () => {
     if (magic) {
@@ -355,6 +414,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       openSignIn: () => setIsSignInOpen(true),
       requestWallet,
       retryAccountSetup,
+      retrySettlementAccount,
       signIn,
       signOut,
       status,
@@ -369,6 +429,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       magicReady,
       requestWallet,
       retryAccountSetup,
+      retrySettlementAccount,
       signIn,
       signOut,
       status,

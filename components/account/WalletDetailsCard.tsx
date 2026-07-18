@@ -6,6 +6,7 @@ import { Card } from "@/components/ui/Card";
 import { StatusChip } from "@/components/ui/StatusChip";
 import { SettlementAccountStatusRow } from "@/components/account/SettlementAccountStatusRow";
 import { SettlementFundingPanel } from "@/components/account/SettlementFundingPanel";
+import { useAuth } from "@/components/auth/useAuth";
 import type { Account } from "@/lib/account/types";
 
 type WalletDetailsCardProps = {
@@ -14,6 +15,8 @@ type WalletDetailsCardProps = {
 };
 
 export function WalletDetailsCard({ account, icon }: WalletDetailsCardProps) {
+  const { retrySettlementAccount } = useAuth();
+
   return (
     <Card tone="soft">
       <div className="flex items-start justify-between gap-3">
@@ -49,7 +52,7 @@ export function WalletDetailsCard({ account, icon }: WalletDetailsCardProps) {
         </details>
         </div>
       )}
-      <SettlementAccountStatusRow readiness={account.settlementAccount} />
+      <SettlementAccountStatusRow readiness={account.settlementAccount} onRetry={retrySettlementAccount} />
     </Card>
   );
 }
